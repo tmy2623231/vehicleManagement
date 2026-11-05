@@ -1,0 +1,41 @@
+@namespace vehicleManagement.Components.Common
+
+<div class="flex justify-between items-center mt-4">
+    <span class="text-sm text-gray">共 @TotalCount 条记录，第 @CurrentPage / @TotalPages 页</span>
+    @if (TotalPages > 1)
+    {
+        <div class="pagination">
+            <button class="page-btn" @onclick="() => GoToPage(1)" disabled="@(CurrentPage <= 1)">首页</button>
+            <button class="page-btn" @onclick="() => GoToPage(CurrentPage - 1)" disabled="@(CurrentPage <= 1)">上一页</button>
+            @foreach (var p in GetPageNumbers())
+            {
+                <button class="page-btn @(p == CurrentPage ? "active" : "")" @onclick="() => GoToPage(p)">@p</button>
+            }
+            <button class="page-btn" @onclick="() => GoToPage(CurrentPage + 1)" disabled="@(CurrentPage >= TotalPages)">下一页</button>
+            <button class="page-btn" @onclick="() => GoToPage(TotalPages)" disabled="@(CurrentPage >= TotalPages)">末页</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int CurrentPage { get; set; } = 1;
+    [Parameter] public int TotalPages { get; set; } = 1;
+    [Parameter] public int TotalCount { get; set; } = 0;
+    [Parameter] public EventCallback<int> OnPageChanged { get; set; }
+
+    private async Task GoToPage(int page)
+    {
+        if (page < 1 || page > TotalPages || page == CurrentPage) return;
+        await OnPageChanged.InvokeAsync(page);
+    }
+
+    private List<int> GetPageNumbers()
+    {
+        var pages = new List<int>();
+        var start = Math.Max(1, CurrentPage - 2);
+        var end = Math.Min(TotalPages, CurrentPage + 2);
+        for (var i = start; i <= end; i++)
+            pages.Add(i);
+        return pages;
+    }
+}

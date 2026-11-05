@@ -1,0 +1,279 @@
+@page "/departments"
+@inject DepartmentService DeptService
+@inject NavigationManager Nav
+
+<div class="flex justify-between items-center mb-5">
+    <div>
+        <h2 class="text-xl font-bold text-dark">部门管理</h2>
+        <p class="text-sm text-gray mt-1">管理部门组织结构和部门信息</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <input class="input-field" type="text" style="width:260px" placeholder="搜索部门名称/描述..."
+               value="@searchKeyword" @oninput="OnSearchInput" />
+        <button class="btn btn-primary" @onclick="ShowAddForm">+ 新增部门</button>
+    </div>
+</div>
+
+<!-- 新增/编辑弹框 -->
+@if (showForm)
+{
+    <div class="modal-overlay show" @onclick="CancelForm">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">@(editId == 0 ? "新增部门" : "编辑部门")</div>
+                <button class="modal-close" @onclick="CancelForm">✕</button>
+            </div>
+            <div>
+                <div class="mb-4">
+                    <label class="input-label">部门名称</label>
+                    <input class="input-field" type="text" placeholder="请输入部门名称" @bind="formName" />
+                </div>
+                <div class="mb-4">
+                    <label class="input-label">描述</label>
+                    <input class="input-field" type="text" placeholder="请输入部门描述（可选）" @bind="formDescription" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CancelForm">取消</button>
+                <button class="btn btn-primary" @onclick="Save">保存</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 删除确认弹框 -->
+@if (showDeleteConfirm)
+{
+    <div class="modal-overlay show" @onclick="CloseDeleteConfirm">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">确认删除</div>
+                <button class="modal-close" @onclick="CloseDeleteConfirm">✕</button>
+            </div>
+            <p style="color:var(--gray-700);font-size:15px;line-height:1.6;">
+                确定要删除部门 <strong class="text-dark">@deletingDeptName</strong> 吗？<br/>
+                <span class="text-sm text-gray">此操作不可恢复。</span>
+            </p>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseDeleteConfirm">取消</button>
+                <button class="btn btn-danger" @onclick="ConfirmDelete">确认删除</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 错误提示弹框 -->
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="modal-overlay show" @onclick="CloseError">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">操作失败</div>
+                <button class="modal-close" @onclick="CloseError">✕</button>
+            </div>
+            <p style="color:var(--red-600);font-size:15px;line-height:1.6;">@errorMessage</p>
+            <div class="modal-footer">
+                <button class="btn btn-primary" @onclick="CloseError">确定</button>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-title">部门列表</div>
+            <div class="card-subtitle">共 @totalCount 个部门</div>
+        </div>
+    </div>
+    <div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("name"))">
+                    部门名称 @SortIndicator("name")
+                </th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("desc"))">
+                    描述 @SortIndicator("desc")
+                </th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("created"))">
+                    创建时间 @SortIndicator("created")
+                </th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var dept in departments)
+            {
+                <tr>
+                    <td class="font-medium text-dark">@dept.Name</td>
+                    <td>@dept.Description</td>
+                    <td>@dept.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>
+                        <div class="flex gap-2">
+                            <button class="btn btn-sm btn-info" @onclick="() => Edit(dept)">编辑</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ShowDeleteConfirm(dept.Id, dept.Name)">删除</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<Pagination CurrentPage="currentPage" TotalPages="totalPages" TotalCount="totalCount" OnPageChanged="OnPageChanged" />
+
+@code {
+    // ===== UI 状态变量 =====
+    private List<Department> departments = new();
+    private bool showForm = false;
+    private int editId = 0;
+    private string formName = "";
+    private string formDescription = "";
+    private string errorMessage = null;
+    private bool showDeleteConfirm = false;
+    private int deletingDeptId = 0;
+    private string deletingDeptName = "";
+
+    // ===== 分页/搜索/排序状态 =====
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalCount = 0;
+    private int totalPages => totalCount > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 1;
+    private string searchKeyword = "";
+    private string sortColumn = "created";
+    private bool sortAscending = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    /// <summary>
+    /// 加载部门分页数据（委托给 DepartmentService）
+    /// </summary>
+    private async Task LoadData()
+    {
+        var result = await DeptService.GetPagedAsync(searchKeyword, sortColumn, sortAscending, currentPage, pageSize);
+        departments = result.Items;
+        totalCount = result.TotalCount;
+        currentPage = result.CurrentPage;
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        await LoadData();
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchKeyword = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private void ToggleSort(string column)
+    {
+        if (sortColumn == column)
+            sortAscending = !sortAscending;
+        else
+        {
+            sortColumn = column;
+            sortAscending = true;
+        }
+        _ = LoadData();
+    }
+
+    private string SortIndicator(string column)
+    {
+        if (sortColumn != column) return "";
+        return sortAscending ? "▲" : "▼";
+    }
+
+    private void ShowAddForm()
+    {
+        editId = 0;
+        formName = "";
+        formDescription = "";
+        showForm = true;
+    }
+
+    private void Edit(Department dept)
+    {
+        editId = dept.Id;
+        formName = dept.Name;
+        formDescription = dept.Description ?? "";
+        showForm = true;
+    }
+
+    private void CancelForm()
+    {
+        showForm = false;
+    }
+
+    /// <summary>
+    /// 保存部门（新增/编辑），委托给 DepartmentService
+    /// </summary>
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(formName)) return;
+
+        try
+        {
+            if (editId == 0)
+            {
+                await DeptService.CreateAsync(formName, formDescription);
+            }
+            else
+            {
+                await DeptService.UpdateAsync(editId, formName, formDescription);
+            }
+
+            showForm = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"保存失败：{ex.Message}";
+        }
+    }
+
+    private void ShowDeleteConfirm(int id, string name)
+    {
+        deletingDeptId = id;
+        deletingDeptName = name;
+        showDeleteConfirm = true;
+    }
+
+    private void CloseDeleteConfirm()
+    {
+        showDeleteConfirm = false;
+        deletingDeptId = 0;
+        deletingDeptName = "";
+    }
+
+    private void CloseError()
+    {
+        errorMessage = null;
+    }
+
+    /// <summary>
+    /// 确认删除部门，委托给 DepartmentService（含业务校验）
+    /// </summary>
+    private async Task ConfirmDelete()
+    {
+        showDeleteConfirm = false;
+        errorMessage = null;
+
+        var (success, errorMsg) = await DeptService.DeleteAsync(deletingDeptId);
+        if (!success)
+        {
+            errorMessage = errorMsg;
+            return;
+        }
+
+        await LoadData();
+    }
+}

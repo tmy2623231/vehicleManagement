@@ -1,0 +1,174 @@
+﻿@page "/"
+@namespace vehicleManagement.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>车辆管理系统</title>
+    <base href="~/" />
+    <link rel="icon" href="favicon.ico" />
+    <link href="css/design-system.css?v=3" rel="stylesheet" />
+    <link href="css/site.css?v=6" rel="stylesheet" />
+    <link href="css/ai-chat.css?v=3" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="js/layout-diagnostics.js?v=1"></script>
+</head>
+<body>
+    <app>
+        <component type="typeof(App)" render-mode="ServerPrerendered" />
+    </app>
+
+    <div id="blazor-error-ui">
+        <environment include="Staging,Production">
+            An error has occurred. This application may no longer respond until reloaded.
+        </environment>
+        <environment include="Development">
+            An unhandled exception has occurred. See browser dev tools for details.
+        </environment>
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <script src="js/chart.umd.min.js"></script>
+    <script>
+    // Download base64 image as file
+    function downloadBase64Image(base64Data, fileName) {
+        var a = document.createElement('a');
+        a.href = base64Data;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+    // Download base64 binary as file (for Excel, etc.)
+    function downloadFile(base64Data, fileName, mimeType) {
+        var byteChars = atob(base64Data);
+        var byteNums = new Array(byteChars.length);
+        for (var i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
+        var byteArr = new Uint8Array(byteNums);
+        var blob = new Blob([byteArr], { type: mimeType });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+    </script>
+    <script>
+    // ── Chart.js — inline to avoid browser cache issues ──
+    Chart.defaults.font.family = "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    Chart.defaults.font.size = 13;
+    Chart.defaults.color = '#8E8E8E';
+    Chart.defaults.plugins.legend.labels.usePointStyle = true;
+    Chart.defaults.plugins.legend.labels.padding = 16;
+    Chart.defaults.plugins.legend.labels.font = { family: "'Geist', sans-serif", size: 12, weight: '500' };
+    Chart.defaults.plugins.tooltip.backgroundColor = '#2D2D2D';
+    Chart.defaults.plugins.tooltip.titleFont = { family: "'Geist', sans-serif", size: 13, weight: '600' };
+    Chart.defaults.plugins.tooltip.bodyFont = { family: "'Geist', sans-serif", size: 12 };
+    Chart.defaults.plugins.tooltip.padding = 10;
+    Chart.defaults.plugins.tooltip.cornerRadius = 8;
+    Chart.defaults.plugins.tooltip.displayColors = true;
+    Chart.defaults.plugins.tooltip.boxPadding = 4;
+
+    var chartColors = {
+        primary: '#009D5E', primaryLight: '#66C49E',
+        blue: '#148BE7', blueLight: '#72B9F1',
+        purple: '#A425F3', purpleLight: '#C87CF8',
+        orange: '#F57C23', orangeLight: '#F9B07B',
+        red: '#C63435', sky: '#3DCAE8', pink: '#FF4FFC', gray: '#8E8E8E'
+    };
+    var chartColorArray = [
+        chartColors.primary, chartColors.blue, chartColors.purple,
+        chartColors.orange, chartColors.sky, chartColors.red,
+        chartColors.pink, chartColors.primaryLight, chartColors.blueLight,
+        chartColors.purpleLight, chartColors.orangeLight, chartColors.gray
+    ];
+
+    window.charts = {
+        _instances: {},
+        destroyChart: function (id) {
+            if (this._instances[id]) { this._instances[id].destroy(); delete this._instances[id]; }
+        },
+        createPieChart: function (canvasId, labels, data, title) {
+            this.destroyChart(canvasId);
+            var ctx = document.getElementById(canvasId);
+            if (!ctx) return;
+            var colors = chartColorArray.slice(0, data.length);
+            this._instances[canvasId] = new Chart(ctx, {
+                type: 'doughnut',
+                data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderColor: '#fff', borderWidth: 2 }] },
+                options: {
+                    responsive: true, maintainAspectRatio: true, cutout: '70%',
+                    plugins: {
+                        title: { display: !!title, text: title, font: { size: 15, weight: '600' }, color: '#373737' },
+                        legend: { position: 'bottom' },
+                        tooltip: { callbacks: { label: function (c) {
+                            var t = c.dataset.data.reduce(function(a,b){return a+b;},0);
+                            return c.label+': '+c.parsed+' ('+((c.parsed/t)*100).toFixed(1)+'%)';
+                        }}}
+                    }
+                }
+            });
+        },
+        createBarChart: function (canvasId, labels, data, title, horizontal) {
+            this.destroyChart(canvasId);
+            var ctx = document.getElementById(canvasId);
+            if (!ctx) return;
+            var isH = horizontal === true;
+            var bc = data.map(function(_,i){ return chartColorArray[i % chartColorArray.length]; });
+            this._instances[canvasId] = new Chart(ctx, {
+                type: 'bar',
+                data: { labels: labels, datasets: [{ data: data, backgroundColor: bc, borderColor: bc, borderWidth: 0, borderRadius: 3, barThickness: 12 }] },
+                options: {
+                    indexAxis: isH ? 'y' : 'x', responsive: true, maintainAspectRatio: true,
+                    plugins: { title: { display: !!title, text: title, font: { size: 15, weight: '600' }, color: '#373737' }, legend: { display: false } },
+                    scales: {
+                        x: { beginAtZero: true, ticks: { precision: 0, color: '#8E8E8E', font: { size: 12 } }, grid: { color: '#F1F1F1', drawBorder: false }, border: { display: false } },
+                        y: { beginAtZero: true, ticks: { precision: 0, color: '#8E8E8E', font: { size: 12 } }, grid: { color: '#F1F1F1', drawBorder: false }, border: { display: false } }
+                    }
+                }
+            });
+        },
+        updateBarChart: function (canvasId, labels, data) {
+            var chart = this._instances[canvasId];
+            if (chart) {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = data;
+                chart.update();
+            } else {
+                this.createBarChart(canvasId, labels, data, '', false);
+            }
+        },
+        createLineChart: function (canvasId, labels, data, title) {
+            this.destroyChart(canvasId);
+            var ctx = document.getElementById(canvasId);
+            if (!ctx) return;
+            this._instances[canvasId] = new Chart(ctx, {
+                type: 'line',
+                data: { labels: labels, datasets: [{ label: '使用次数', data: data, borderColor: chartColors.primary, backgroundColor: 'rgba(0,157,94,0.08)', pointBackgroundColor: chartColors.primary, pointBorderColor: '#fff', pointBorderWidth: 2, borderWidth: 2.5, fill: true, tension: 0.4, pointRadius: 4, pointHoverRadius: 6 }] },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { title: { display: !!title, text: title, font: { size: 15, weight: '600' }, color: '#373737' }, legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0, color: '#8E8E8E', font: { size: 12 } }, grid: { color: '#F1F1F1', drawBorder: false }, border: { display: false } },
+                        x: { ticks: { color: '#8E8E8E', font: { size: 12 } }, grid: { display: false }, border: { display: false } }
+                    }
+                }
+            });
+        }
+    };
+    </script>
+    <script src="_framework/blazor.server.js?v=4"></script>
+</body>
+</html>

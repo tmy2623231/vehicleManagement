@@ -1,0 +1,460 @@
+﻿@page "/"
+@using System.Threading
+@inject DashboardService DashboardSvc
+@inject IJSRuntime JS
+
+@* ===== 欢迎 Banner ===== *@
+<div class="banner banner-primary">
+    <div>
+        <div class="banner-title">车辆管理系统</div>
+        <div class="banner-desc">欢迎使用车辆管理平台，实时监控车辆状态与使用情况。</div>
+    </div>
+</div>
+
+@* ===== 第1行：统计卡片 ===== *@
+<div class="grid grid-4 mb-6">
+    <div class="stat-card">
+        <div class="stat-label">车辆总数</div>
+        <div class="stat-value">@vehicleCount</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">在用车辆</div>
+        <div class="stat-value">@activeCount</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">维修车辆</div>
+        <div class="stat-value">@maintenanceCount</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">退役车辆</div>
+        <div class="stat-value">@retiredCount</div>
+    </div>
+</div>
+
+@* ===== 第2行：部门车辆分布 + 车辆状态分布 + 近6个月趋势（三图并排） ===== *@
+<div class="grid grid-3 mb-6">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <div class="card-title">各部门车辆分布</div>
+                <div class="card-subtitle">按部门统计车辆数量</div>
+            </div>
+        </div>
+        <div class="card-body">
+            @if (deptVehicleStats.Any())
+            {
+                <div class="chart-wrap"><canvas id="deptPieChart"></canvas></div>
+            }
+            else
+            {
+                <div class="empty-state"><div class="empty-desc">暂无数据</div></div>
+            }
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <div class="card-title">车辆状态分布</div>
+                <div class="card-subtitle">按使用/维修/退役状态统计</div>
+            </div>
+        </div>
+        <div class="card-body">
+            @if (vehicleCount > 0)
+            {
+                <div class="chart-wrap"><canvas id="statusPieChart"></canvas></div>
+            }
+            else
+            {
+                <div class="empty-state"><div class="empty-desc">暂无数据</div></div>
+            }
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <div class="card-title">近6个月用车趋势</div>
+                <div class="card-subtitle">按月统计使用记录数量</div>
+            </div>
+        </div>
+        <div class="card-body">
+            @if (monthlyTrend.Any())
+            {
+                <div class="chart-wrap"><canvas id="trendLineChart"></canvas></div>
+            }
+            else
+            {
+                <div class="empty-state"><div class="empty-desc">暂无数据</div></div>
+            }
+        </div>
+    </div>
+</div>
+
+@* ===== 第3行：部门用车排行 + 人员用车排行 ===== *@
+<div class="grid grid-2 mb-6">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">部门用车排行</div>
+            <div class="seg-control">
+                <button class="@(deptRankPeriod == "month" ? "active" : "")" @onclick="@(() => ChangeDeptRankPeriod("month"))">本月</button>
+                <button class="@(deptRankPeriod == "quarter" ? "active" : "")" @onclick="@(() => ChangeDeptRankPeriod("quarter"))">本季度</button>
+                <button class="@(deptRankPeriod == "all" ? "active" : "")" @onclick="@(() => ChangeDeptRankPeriod("all"))">全部</button>
+            </div>
+        </div>
+        <div class="card-body">
+            @if (deptRankStats.Any())
+            {
+                var deptMax = deptRankStats.Max(s => s.Count);
+                <div class="rank-bars">
+                    @for (int i = 0; i < deptRankStats.Count; i++)
+                    {
+                        var stat = deptRankStats[i];
+                        var pct = deptMax > 0 ? (int)Math.Round((double)stat.Count / deptMax * 100) : 0;
+                        <div class="rank-bar-row">
+                            <span class="rank-bar-num">@(i + 1)</span>
+                            <span class="rank-bar-label">@stat.DeptName</span>
+                            <div class="rank-bar-track">
+                                <div class="rank-bar-fill" style="width:@(pct)%"></div>
+                            </div>
+                            <span class="rank-bar-value">@stat.Count</span>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="empty-state"><div class="empty-desc">暂无数据</div></div>
+            }
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">人员用车排行</div>
+            <div class="seg-control">
+                <button class="@(personRankPeriod == "month" ? "active" : "")" @onclick="@(() => ChangePersonRankPeriod("month"))">本月</button>
+                <button class="@(personRankPeriod == "quarter" ? "active" : "")" @onclick="@(() => ChangePersonRankPeriod("quarter"))">本季度</button>
+                <button class="@(personRankPeriod == "all" ? "active" : "")" @onclick="@(() => ChangePersonRankPeriod("all"))">全部</button>
+            </div>
+        </div>
+        <div class="card-body">
+            @if (personRankStats.Any())
+            {
+                var personMax = personRankStats.Max(s => s.Count);
+                <div class="rank-bars">
+                    @for (int i = 0; i < personRankStats.Count; i++)
+                    {
+                        var stat = personRankStats[i];
+                        var pct = personMax > 0 ? (int)Math.Round((double)stat.Count / personMax * 100) : 0;
+                        <div class="rank-bar-row">
+                            <span class="rank-bar-num">@(i + 1)</span>
+                            <span class="rank-bar-label">@stat.PersonName</span>
+                            <div class="rank-bar-track">
+                                <div class="rank-bar-fill" style="width:@(pct)%"></div>
+                            </div>
+                            <span class="rank-bar-value">@stat.Count</span>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="empty-state"><div class="empty-desc">暂无数据</div></div>
+            }
+        </div>
+    </div>
+</div>
+
+@* ===== 第5行：最近使用记录 ===== *@
+<div class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-title">最近使用记录</div>
+            <div class="card-subtitle">最新的车辆使用记录</div>
+        </div>
+        <input class="input-field" type="text" style="width:260px" placeholder="搜索车牌号/人员/部门..."
+               value="@searchKeyword" @oninput="OnSearchInput" />
+    </div>
+    <div class="card-body">
+        @if (recentRecords.Any())
+        {
+            <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="cursor:pointer" @onclick="@(() => ToggleSort("vehicle"))">车辆 @SortIndicator("vehicle")</th>
+                        <th style="cursor:pointer" @onclick="@(() => ToggleSort("person"))">使用人 @SortIndicator("person")</th>
+                        <th>部门</th>
+                        <th>停车位置</th>
+                        <th>附件</th>
+                        <th style="cursor:pointer" @onclick="@(() => ToggleSort("created"))">时间 @SortIndicator("created")</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in recentRecords)
+                    {
+                        <tr>
+                            <td>@(r.Vehicle?.LicensePlate ?? "-")</td>
+                            <td>@(r.Personnel?.Name ?? "-")</td>
+                            <td>@(r.Department?.Name ?? "-")</td>
+                            <td>@(r.FinalLocation?.Name ?? "-")</td>
+                            <td>
+                                @{
+                                    var files = GetAllFiles(r);
+                                }
+                                @if (files.Any())
+                                {
+                                    <button class="btn btn-sm btn-info" @onclick="() => OpenViewer(files, 0)">
+                                        @files.Count 个附件
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span>-</span>
+                                }
+                            </td>
+                            <td>@r.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+
+            <Pagination CurrentPage="currentPage" TotalPages="totalPages" TotalCount="totalCount" OnPageChanged="OnPageChanged" />
+        }
+        else
+        {
+            <div class="empty-state"><div class="empty-desc">暂无使用记录</div></div>
+        }
+    </div>
+</div>
+
+<!-- 附件查看弹框 -->
+@if (showViewer)
+{
+    <div class="modal-overlay show" @onclick="CloseViewer">
+        <div class="modal" style="max-width:720px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">附件查看 (@(currentFileIndex + 1) / @viewerFiles.Count)</div>
+                <button class="modal-close" @onclick="CloseViewer">✕</button>
+            </div>
+            <div style="text-align:center;min-height:400px;display:flex;align-items:center;justify-content:center;">
+                @if (IsImageFile(viewerFiles[currentFileIndex]))
+                {
+                    <img src="@viewerFiles[currentFileIndex]" style="max-height:500px;max-width:100%;" alt="附件" />
+                }
+                else
+                {
+                    <video src="@viewerFiles[currentFileIndex]" controls style="max-height:500px;max-width:100%;"></video>
+                }
+            </div>
+            <p class="text-sm text-gray text-center mt-3">@Path.GetFileName(viewerFiles[currentFileIndex])</p>
+            <div class="modal-footer">
+                <button class="btn btn-sm btn-secondary" @onclick="PrevFile" disabled="@(currentFileIndex == 0)">← 上一个</button>
+                <span class="text-sm text-gray">@(currentFileIndex + 1) / @viewerFiles.Count</span>
+                <button class="btn btn-sm btn-secondary" @onclick="NextFile" disabled="@(currentFileIndex >= viewerFiles.Count - 1)">下一个 →</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // ===== 统计卡片数据 =====
+    private int vehicleCount = 0;
+    private int activeCount = 0;
+    private int maintenanceCount = 0;
+    private int retiredCount = 0;
+
+    // ===== 部门车辆分布饼图 =====
+    private List<DeptVehicleStat> deptVehicleStats = new();
+
+    // ===== 月度用车趋势 =====
+    private List<MonthlyTrendStat> monthlyTrend = new();
+
+    // ===== 部门用车排行 =====
+    private List<DeptRankStat> deptRankStats = new();
+    private string deptRankPeriod = "all";
+
+    // ===== 人员用车排行 =====
+    private List<PersonRankStat> personRankStats = new();
+    private string personRankPeriod = "all";
+
+    // ===== 最近使用记录 =====
+    private List<VehicleUsageRecord> recentRecords = new();
+    private bool showViewer = false;
+    private List<string> viewerFiles = new();
+    private int currentFileIndex = 0;
+    private string searchKeyword = "";
+    private string sortColumn = "created";
+    private bool sortAscending = false;
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalCount = 0;
+    private int totalPages => totalCount > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 1;
+
+    // ===== 图表状态追踪 =====
+    private bool chartsCreated = false;
+    private bool isInteractive = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatistics();
+        await LoadRecentRecords();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // 检测是否处于交互模式（非预渲染阶段）
+        if (!isInteractive)
+        {
+            isInteractive = SynchronizationContext.Current != null;
+        }
+
+        // 仅在交互模式下渲染图表，且只创建一次
+        if (isInteractive && !chartsCreated)
+        {
+            try
+            {
+                await RenderAllCharts();
+                chartsCreated = true;
+            }
+            catch (Exception)
+            {
+                // JS Interop 在连接尚未就绪时可能失败，下次渲染会重试
+            }
+        }
+    }
+
+    /// <summary>
+    /// 加载所有统计数据（委托给 DashboardService）
+    /// </summary>
+    private async Task LoadStatistics()
+    {
+        // 1. 车辆统计卡片
+        var stats = await DashboardSvc.GetVehicleStatsAsync();
+        vehicleCount = stats.TotalCount;
+        activeCount = stats.ActiveCount;
+        maintenanceCount = stats.MaintenanceCount;
+        retiredCount = stats.RetiredCount;
+
+        // 2. 部门车辆分布
+        deptVehicleStats = await DashboardSvc.GetDeptVehicleStatsAsync();
+
+        // 3. 月度用车趋势
+        monthlyTrend = await DashboardSvc.GetMonthlyTrendAsync();
+
+        // 4. 部门用车排行
+        deptRankStats = await DashboardSvc.GetDeptRankAsync(deptRankPeriod);
+
+        // 5. 人员用车排行
+        personRankStats = await DashboardSvc.GetPersonRankAsync(personRankPeriod);
+    }
+
+    // ===== 排行榜周期切换 =====
+    private async Task ChangeDeptRankPeriod(string period)
+    {
+        deptRankPeriod = period;
+        deptRankStats = await DashboardSvc.GetDeptRankAsync(period);
+    }
+
+    private async Task ChangePersonRankPeriod(string period)
+    {
+        personRankPeriod = period;
+        personRankStats = await DashboardSvc.GetPersonRankAsync(period);
+    }
+
+    // ===== 图表渲染 =====
+    private async Task RenderAllCharts()
+    {
+        // 延迟 100ms 确保 Blazor Server 端 DOM 已完全更新
+        await Task.Delay(100);
+        
+        // 部门车辆分布柱状图
+        if (deptVehicleStats.Any())
+        {
+            await JS.InvokeVoidAsync("charts.createBarChart", "deptPieChart",
+                deptVehicleStats.Select(s => s.DeptName).ToArray(),
+                deptVehicleStats.Select(s => s.Count).ToArray(),
+                "", false);
+        }
+
+        // 车辆状态分布柱状图
+        if (vehicleCount > 0)
+        {
+            await JS.InvokeVoidAsync("charts.createBarChart", "statusPieChart",
+                new[] { "在用", "维修", "退役" },
+                new[] { activeCount, maintenanceCount, retiredCount },
+                "", false);
+        }
+
+        // 月度趋势折线图
+        if (monthlyTrend.Any())
+        {
+            await JS.InvokeVoidAsync("charts.createLineChart", "trendLineChart",
+                monthlyTrend.Select(m => m.Label).ToArray(),
+                monthlyTrend.Select(m => m.Count).ToArray(),
+                "");
+        }
+    }
+
+    /// <summary>
+    /// 加载最近使用记录（委托给 DashboardService）
+    /// </summary>
+    private async Task LoadRecentRecords()
+    {
+        var result = await DashboardSvc.GetRecentRecordsAsync(searchKeyword, sortColumn, sortAscending, currentPage, pageSize);
+        recentRecords = result.Items;
+        totalCount = result.TotalCount;
+        currentPage = result.CurrentPage;
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        await LoadRecentRecords();
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchKeyword = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        await LoadRecentRecords();
+    }
+
+    private void ToggleSort(string column)
+    {
+        if (sortColumn == column) sortAscending = !sortAscending;
+        else { sortColumn = column; sortAscending = true; }
+        _ = LoadRecentRecords();
+    }
+
+    private string SortIndicator(string column) => sortColumn != column ? "" : (sortAscending ? "▲" : "▼");
+
+    // ===== 附件查看相关 =====
+    private static readonly string[] ImageExtensions = { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+
+    private List<string> GetAllFiles(VehicleUsageRecord r)
+    {
+        var files = new List<string>();
+        if (!string.IsNullOrEmpty(r.ImagePaths))
+            files.AddRange(r.ImagePaths.Split(';', StringSplitOptions.RemoveEmptyEntries));
+        if (!string.IsNullOrEmpty(r.VideoPaths))
+            files.AddRange(r.VideoPaths.Split(';', StringSplitOptions.RemoveEmptyEntries));
+        return files;
+    }
+
+    private bool IsImageFile(string path)
+    {
+        var ext = Path.GetExtension(path)?.ToLowerInvariant();
+        return ImageExtensions.Contains(ext);
+    }
+
+    private void OpenViewer(List<string> files, int startIndex)
+    {
+        viewerFiles = files;
+        currentFileIndex = startIndex;
+        showViewer = true;
+    }
+
+    private void CloseViewer() => showViewer = false;
+    private void PrevFile() { if (currentFileIndex > 0) currentFileIndex--; }
+    private void NextFile() { if (currentFileIndex < viewerFiles.Count - 1) currentFileIndex++; }
+}

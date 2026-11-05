@@ -1,0 +1,39 @@
+@inherits LayoutComponentBase
+@using vehicleManagement.Components.Navigation
+
+<div class="app-layout">
+    <NavMenu IsOpen="sidebarOpen" />
+
+    <div class="main-wrapper">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="mobile-menu-btn" @onclick="ToggleSidebar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="topbar-right">
+                <div class="avatar" style="background:var(--primary-100);color:var(--primary-600);">VM</div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            @Body
+        </main>
+    </div>
+</div>
+
+<div class="sidebar-overlay @(sidebarOpen ? "show" : "")" @onclick="CloseSidebar"></div>
+
+@code {
+    private bool sidebarOpen = false;
+
+    private void ToggleSidebar()
+    {
+        sidebarOpen = !sidebarOpen;
+    }
+
+    private void CloseSidebar()
+    {
+        sidebarOpen = false;
+    }
+}

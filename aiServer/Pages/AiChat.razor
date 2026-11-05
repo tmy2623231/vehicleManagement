@@ -1,0 +1,554 @@
+@page "/ai-chat"
+@using vehicleManagement.aiServer.BLL
+@using vehicleManagement.aiServer.DAL.Model
+@using System.Text.Json
+@inject ChatService ChatService
+@inject IJSRuntime JS
+@implements IDisposable
+
+@* ===== 移动端侧边栏遮罩 ===== *@
+@if (isSidebarOpen && isMobile)
+{
+    <div class="aim-overlay" @onclick="ToggleSidebar"></div>
+}
+
+@* ===== 主布局 ===== *@
+<div class="aim-layout">
+    @* ===== 侧边栏 ===== *@
+    <aside class="aim-aside @(isSidebarOpen ? "aim-aside--open" : "")">
+        <div class="aim-aside__head">
+            <span class="aim-aside__label">对话</span>
+            <div class="aim-aside__actions">
+                <button class="aim-aside__close-mobile" @onclick="ToggleSidebar" aria-label="关闭">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+                <button class="aim-btn aim-btn--xs" @onclick="CreateNewSession" disabled="@isSending" aria-label="新建对话">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    新对话
+                </button>
+            </div>
+        </div>
+
+        <div class="aim-aside__list">
+            @if (sessions.Any())
+            {
+                @foreach (var session in sessions)
+                {
+                    <div class="aim-sess @(session.Id == currentSessionId ? "aim-sess--on" : "")"
+                         @onclick="() => SelectSession(session.Id)"
+                         role="button" tabindex="0"
+                         @onkeydown="(e => HandleSessionKeydown(e, session.Id))">
+                        <svg class="aim-sess__ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                        <div class="aim-sess__body">
+                            <div class="aim-sess__title">@session.Title</div>
+                            <div class="aim-sess__time">@session.UpdatedAt.ToString("MM-dd HH:mm")</div>
+                        </div>
+                        <button class="aim-sess__del" title="删除" @onclick:stopPropagation @onclick="() => DeleteSession(session.Id)" aria-label="删除会话">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                        </button>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="aim-empty">
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                    <span>暂无对话</span>
+                </div>
+            }
+        </div>
+
+        <div class="aim-mem">
+            <button class="aim-mem__tog" @onclick="ToggleMemories" aria-expanded="@showMemories">
+                <span class="aim-mem__tog-inner">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                    记忆
+                    @if (memories.Any()) { <b class="aim-mem__badge">@memories.Count</b> }
+                </span>
+                <svg class="aim-mem__chev @(showMemories ? "aim-mem__chev--up" : "")" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            @if (showMemories)
+            {
+                <div class="aim-mem__list">
+                    @if (memories.Any())
+                    {
+                        @foreach (var mem in memories)
+                        {
+                            <div class="aim-mem__row">
+                                <i class="aim-mem__dot aim-mem__dot--@(mem.Category ?? "general")"></i>
+                                <span class="aim-mem__txt">@mem.Content</span>
+                                <button class="aim-mem__x" @onclick="() => DeleteMemory(mem.Id)" aria-label="删除">×</button>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p class="aim-mem__none">暂无记忆</p>
+                    }
+                </div>
+            }
+        </div>
+    </aside>
+
+    @* ===== 主聊天区域 ===== *@
+    <main class="aim-main">
+        @if (currentSessionId == 0)
+        {
+            @* ===== 欢迎页 ===== *@
+            <div class="aim-welcome">
+                <div class="aim-welcome__card">
+                    <div class="aim-welcome__icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/><path d="M9.5 2c-1.82 0-3.53.5-5 1.35"/><path d="M14.5 2c1.82 0 3.53.5 5 1.35"/>
+                            <circle cx="12" cy="9" r="2" fill="currentColor" opacity="0.15"/>
+                            <circle cx="12" cy="9" r="1" fill="currentColor"/>
+                        </svg>
+                    </div>
+                    <h1 class="aim-welcome__title">AI 车辆管理助手</h1>
+                    <p class="aim-welcome__sub">可以帮您查询车辆信息、管理使用记录、分析统计数据。</p>
+                    <button class="aim-btn aim-btn--lg" @onclick="CreateNewSession">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        开始新对话
+                    </button>
+                    <div class="aim-welcome__chips">
+                        <span class="aim-welcome__tip">试试这样问我</span>
+                        <div class="aim-chips">
+                            @foreach (var prompt in ExamplePrompts)
+                            {
+                                <button class="aim-chip" @onclick="() => QuickStart(prompt)">@prompt</button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            @* ===== 聊天头部 ===== *@
+            <div class="aim-bar">
+                <div class="aim-bar__left">
+                    <button class="aim-bar__menu" @onclick="ToggleSidebar" aria-label="菜单">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                    </button>
+                    <span class="aim-bar__title">@currentSessionTitle</span>
+                </div>
+                @if (isSending)
+                {
+                    <span class="aim-bar__ping"><i></i>AI 思考中...</span>
+                }
+            </div>
+
+            @* ===== 消息列表 ===== *@
+            <div class="aim-msgs" @ref="messagesContainer">
+                @if (!messages.Any())
+                {
+                    <div class="aim-msgs__empty">
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                        <span>开始你的第一条消息吧</span>
+                    </div>
+                }
+
+                @foreach (var msg in messages)
+                {
+                    <div class="aim-msg @(msg.Role == "user" ? "aim-msg--me" : "aim-msg--bot")">
+                        @* AI 思考过程 — 可折叠 *@
+                        @if (msg.Role == "assistant" && !string.IsNullOrEmpty(msg.ThinkingContent))
+                        {
+                            <div class="aim-think @(IsThinkingExpanded(msg.Id) ? "aim-think--on" : "")">
+                                <button class="aim-think__hd" @onclick="() => ToggleThinking(msg.Id)" type="button">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><path d="M10 21h4"/>
+                                    </svg>
+                                    <span class="aim-think__label">思考过程</span>
+                                    <svg class="aim-think__arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                                </button>
+                                <div class="aim-think__bd">
+                                    @RenderMessageContent(msg.ThinkingContent)
+                                </div>
+                            </div>
+                        }
+
+                        @* 气泡内容 *@
+                        <div class="aim-msg__bub">
+                            <div class="aim-msg__txt">@RenderMessageContent(msg.Content)</div>
+                            <div class="aim-msg__ts">@msg.CreatedAt.ToString("HH:mm")</div>
+                        </div>
+                    </div>
+                }
+
+                @* 输入中状态 *@
+                @if (isSending)
+                {
+                    <div class="aim-msg aim-msg--bot">
+                        <div class="aim-msg__bub aim-msg__bub--think">
+                            <div class="aim-typing"><i></i><i></i><i></i></div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @* 回到底部按钮 *@
+            @if (showScrollBtn)
+            {
+                <button class="aim-down" @onclick="ScrollToBottomSmooth" aria-label="回到底部">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+            }
+
+            @* ===== 输入框 ===== *@
+            <div class="aim-input">
+                <div class="aim-input__wrap">
+                    <textarea class="aim-input__ta"
+                              @bind="userInput"
+                              @bind:event="oninput"
+                              @onkeydown="HandleKeyDown"
+                              placeholder="输入消息，Enter 发送，Shift+Enter 换行..."
+                              disabled="@isSending"
+                              rows="1"></textarea>
+                    <button class="aim-input__send"
+                            @onclick="SendMessage"
+                            disabled="@(isSending || string.IsNullOrWhiteSpace(userInput))"
+                            aria-label="发送">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                </div>
+            </div>
+        }
+    </main>
+</div>
+
+@* ===== 布局诊断面板 ===== *@
+@if (showDiagnostics)
+{
+    <div class="aim-diag">
+        <div class="aim-diag__hd">
+            <span>布局检测报告</span>
+            <div style="display:flex;gap:6px">
+                <button class="aim-diag__btn" @onclick="RunDiagnosticsWithMarkers">标记</button>
+                <button class="aim-diag__btn" @onclick="ClearDiagnostics">✕</button>
+            </div>
+        </div>
+        <pre class="aim-diag__bd">@diagnosticResult</pre>
+    </div>
+}
+
+@code {
+    // ── 状态 ──
+    private List<ChatSession> sessions = new();
+    private List<ChatMessage> messages = new();
+    private List<ChatMemory> memories = new();
+    private int currentSessionId = 0;
+    private string currentSessionTitle = "";
+    private string userInput = "";
+    private bool isSending = false;
+    private bool showMemories = false;
+    private bool isSidebarOpen = false;
+    private bool showScrollBtn = false;
+    private bool isMobile = false;
+    private ElementReference messagesContainer;
+    private bool showDiagnostics = false;
+    private string diagnosticResult = "";
+    private HashSet<int> expandedThinkingIds = new();
+
+    // 自动滚动状态
+    private bool _shouldAutoScroll = true;
+    private DotNetObjectReference<AiChat> _dotNetRef;
+
+    private static readonly List<string> ExamplePrompts = new()
+    {
+        "目前有哪些车辆在用？",
+        "帮我查一下各部门的车辆分布",
+        "最近一周有哪些使用记录？",
+        "如何添加新的使用记录？"
+    };
+
+    private bool IsThinkingExpanded(int id) => expandedThinkingIds.Contains(id);
+    private void ToggleThinking(int id)
+    {
+        if (!expandedThinkingIds.Remove(id)) expandedThinkingIds.Add(id);
+        StateHasChanged();
+    }
+
+    private async Task HandleSessionKeydown(KeyboardEventArgs e, int sessionId)
+    {
+        if (e.Key == "Enter") await SelectSession(sessionId);
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadSessions();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { isMobile = await JS.InvokeAsync<bool>("eval", "window.innerWidth <= 640"); } catch { }
+
+            // 注册全局滚动监听函数（仅一次）
+            await JS.InvokeVoidAsync("eval", @"
+window._aimInitScroll = function(dotnetRef) {
+    const el = document.querySelector('.aim-msgs');
+    if (!el || el._aimInit) return;
+    el._aimInit = true;
+    el.addEventListener('scroll', () => {
+        const d = el.scrollHeight - el.scrollTop - el.clientHeight;
+        dotnetRef.invokeMethodAsync('OnChatScroll', d);
+    });
+};
+");
+        }
+
+        // 进入聊天视图时绑定滚动监听
+        if (currentSessionId != 0 && _dotNetRef == null)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("_aimInitScroll", _dotNetRef);
+        }
+
+        // 自动滚动至底部
+        if (_shouldAutoScroll && currentSessionId != 0)
+        {
+            await ScrollToBottomInstant();
+        }
+    }
+
+    // ── 滚动回调（由 JS 触发）──
+    [JSInvokable]
+    public async Task OnChatScroll(double distanceFromBottom)
+    {
+        var prevAutoScroll = _shouldAutoScroll;
+        var prevShowBtn = showScrollBtn;
+
+        // 距离底部 < 50px → 恢复自动滚动
+        _shouldAutoScroll = distanceFromBottom < 50;
+        // 距离底部 > 200px → 显示"回到底部"按钮
+        showScrollBtn = distanceFromBottom > 200;
+
+        if (prevAutoScroll != _shouldAutoScroll || prevShowBtn != showScrollBtn)
+            await InvokeAsync(StateHasChanged);
+    }
+
+    // ── 会话 ──
+    private async Task LoadSessions() => sessions = (await ChatService.GetSessionsAsync()).ToList();
+
+    private async Task CreateNewSession()
+    {
+        var session = await ChatService.CreateSessionAsync();
+        sessions.Insert(0, session);
+        currentSessionId = session.Id;
+        currentSessionTitle = session.Title;
+        messages.Clear();
+        userInput = "";
+        if (isMobile) isSidebarOpen = false;
+        StateHasChanged();
+    }
+
+    private async Task SelectSession(int sessionId)
+    {
+        currentSessionId = sessionId;
+        var session = sessions.FirstOrDefault(s => s.Id == sessionId);
+        currentSessionTitle = session?.Title ?? "";
+        messages = (await ChatService.GetMessagesAsync(sessionId)).ToList();
+        userInput = "";
+        showMemories = false;
+        if (isMobile) isSidebarOpen = false;
+        _shouldAutoScroll = true;
+        showScrollBtn = false;
+        StateHasChanged();
+        await ScrollToBottomSmooth();
+    }
+
+    private async Task DeleteSession(int sessionId)
+    {
+        var result = await ChatService.DeleteSessionAsync(sessionId);
+        if (result)
+        {
+            sessions.RemoveAll(s => s.Id == sessionId);
+            if (currentSessionId == sessionId)
+            {
+                currentSessionId = 0;
+                currentSessionTitle = "";
+                messages.Clear();
+            }
+            StateHasChanged();
+        }
+    }
+
+    // ── 消息发送 ──
+    private async Task SendMessage()
+    {
+        if (isSending || string.IsNullOrWhiteSpace(userInput) || currentSessionId == 0) return;
+
+        var input = userInput.Trim();
+        userInput = "";
+        
+        // 立即将用户消息添加到本地列表，确保思考阶段能显示
+        var userMessage = new ChatMessage
+        {
+            SessionId = currentSessionId,
+            Role = "user",
+            Content = input,
+            CreatedAt = DateTime.Now
+        };
+        messages.Add(userMessage);
+        
+        isSending = true;
+        StateHasChanged();
+
+        try
+        {
+            await ChatService.SendMessageAsync(currentSessionId, input);
+            messages = (await ChatService.GetMessagesAsync(currentSessionId)).ToList();
+            await LoadSessions();
+        }
+        catch (Exception ex)
+        {
+            messages.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = $"发生错误：{ex.Message}",
+                CreatedAt = DateTime.Now
+            });
+        }
+        finally
+        {
+            isSending = false;
+            _shouldAutoScroll = true;
+            showScrollBtn = false;
+            StateHasChanged();
+            // 注意：OnAfterRenderAsync 会自动处理滚动到最新输出
+        }
+    }
+
+    private async Task QuickStart(string prompt)
+    {
+        await CreateNewSession();
+        userInput = prompt;
+        StateHasChanged();
+        await SendMessage();
+    }
+
+    // ── 键盘 ──
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "F12" && !isSending)
+        {
+            if (e.CtrlKey) await RunDiagnosticsWithMarkers();
+            else await RunDiagnostics();
+            return;
+        }
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            userInput = userInput.TrimEnd('\n', '\r');
+            await SendMessage();
+        }
+    }
+
+    // ── 诊断 ──
+    private async Task RunDiagnostics()
+    {
+        try
+        {
+            var result = await JS.InvokeAsync<JsonElement>("eval",
+                "JSON.stringify(window.checkLayoutFill ? window.checkLayoutFill() : { error: 'not loaded' })");
+            var json = result.GetString() ?? "{}";
+            var parsed = JsonSerializer.Deserialize<JsonElement>(json);
+            var text = JsonSerializer.Serialize(parsed, new JsonSerializerOptions { WriteIndented = true });
+            var verdict = parsed.TryGetProperty("verdict", out var v) ? v.GetString() ?? "" : "";
+            var gapCount = parsed.TryGetProperty("gaps", out var g) ? g.GetArrayLength() : 0;
+            showDiagnostics = true;
+            diagnosticResult = $"[{verdict}]\n{gapCount} 处空白\n\n{text}";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            showDiagnostics = true;
+            diagnosticResult = $"调用失败: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private async Task RunDiagnosticsWithMarkers()
+    {
+        try
+        {
+            var result = await JS.InvokeAsync<JsonElement>("eval",
+                "JSON.stringify(window.checkLayoutFill ? window.checkLayoutFill({draw:true}) : { error: 'not loaded' })");
+            var json = result.GetString() ?? "{}";
+            var parsed = JsonSerializer.Deserialize<JsonElement>(json);
+            var text = JsonSerializer.Serialize(parsed, new JsonSerializerOptions { WriteIndented = true });
+            var verdict = parsed.TryGetProperty("verdict", out var v) ? v.GetString() ?? "" : "";
+            var gapCount = parsed.TryGetProperty("gaps", out var g) ? g.GetArrayLength() : 0;
+            showDiagnostics = true;
+            diagnosticResult = $"[{verdict}]\n{gapCount} 处空白（已标记红色框）\n\n{text}";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            showDiagnostics = true;
+            diagnosticResult = $"调用失败: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private async Task ClearDiagnostics()
+    {
+        await JS.InvokeVoidAsync("eval", "window.checkLayoutFill({clear:true})");
+        showDiagnostics = false;
+        StateHasChanged();
+    }
+
+    // ── 杂项 ──
+    private async Task ToggleMemories()
+    {
+        showMemories = !showMemories;
+        if (showMemories) memories = (await ChatService.GetMemoriesAsync()).ToList();
+        StateHasChanged();
+    }
+
+    private async Task DeleteMemory(int id)
+    {
+        await ChatService.DeleteMemoryAsync(id);
+        memories.RemoveAll(m => m.Id == id);
+        StateHasChanged();
+    }
+
+    private void ToggleSidebar() { isSidebarOpen = !isSidebarOpen; StateHasChanged(); }
+
+    /// <summary>平滑滚动到底部（用户点击按钮时调用）</summary>
+    private async Task ScrollToBottomSmooth()
+    {
+        _shouldAutoScroll = true;
+        showScrollBtn = false;
+        try
+        {
+            await JS.InvokeVoidAsync("eval",
+                "const el=document.querySelector('.aim-msgs');if(el)el.scrollTo({top:el.scrollHeight,behavior:'smooth'});");
+        }
+        catch { }
+    }
+
+    /// <summary>瞬间滚动到底部（OnAfterRenderAsync 内部使用，避免平滑动画延迟）</summary>
+    private async Task ScrollToBottomInstant()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval",
+                "const el=document.querySelector('.aim-msgs');if(el)el.scrollTop=el.scrollHeight;");
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+
+    private MarkupString RenderMessageContent(string content)
+    {
+        if (string.IsNullOrEmpty(content)) return new MarkupString(string.Empty);
+        var html = System.Net.WebUtility.HtmlEncode(content);
+        html = html.Replace("\n", "<br/>");
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"`(.+?)`", "<code>$1</code>");
+        return new MarkupString(html);
+    }
+}

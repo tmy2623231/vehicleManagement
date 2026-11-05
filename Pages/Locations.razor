@@ -1,0 +1,347 @@
+@page "/locations"
+@inject LocationService LocService
+
+<div class="flex justify-between items-center mb-5">
+    <div>
+        <h2 class="text-xl font-bold text-dark">地点管理</h2>
+        <p class="text-sm text-gray mt-1">管理途经路径点和最终停车位置</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <input class="input-field" type="text" style="width:260px" placeholder="搜索地点名称/描述..."
+               value="@searchKeyword" @oninput="OnSearchInput" />
+        <button class="btn btn-primary" @onclick="() => ShowAddForm(LocationCategory.Location)">+ 新增途经路径点</button>
+        <button class="btn btn-primary" @onclick="() => ShowAddForm(LocationCategory.Purpose)">+ 新增停车位置</button>
+    </div>
+</div>
+
+<!-- 新增/编辑弹框 -->
+@if (showForm)
+{
+    <div class="modal-overlay show" @onclick="CancelForm">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">@(editId == 0 ? "新增" : "编辑") - @(formCategory == LocationCategory.Location ? "途经路径点" : "最终停车位置")</div>
+                <button class="modal-close" @onclick="CancelForm">✕</button>
+            </div>
+            <div>
+                <div class="grid grid-2 mb-4">
+                    <div>
+                        <label class="input-label">名称</label>
+                        <input class="input-field" type="text" placeholder="请输入名称" @bind="formName" />
+                    </div>
+                    <div>
+                        <label class="input-label">描述</label>
+                        <input class="input-field" type="text" placeholder="请输入描述（可选）" @bind="formDescription" />
+                    </div>
+                </div>
+                <div class="grid grid-2 mb-4">
+                    <div>
+                        <label class="input-label">排序</label>
+                        <input class="input-field" type="number" placeholder="排序号" @bind="formSortOrder" />
+                    </div>
+                    <div style="display:flex;align-items:flex-end;padding-bottom:4px;">
+                        <label class="input-label" style="cursor:pointer">
+                            <input type="checkbox" @bind="formIsActive" style="width:16px;height:16px;" />
+                            <span>启用</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CancelForm">取消</button>
+                <button class="btn btn-primary" @onclick="Save">保存</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 删除确认弹框 -->
+@if (showDeleteConfirm)
+{
+    <div class="modal-overlay show" @onclick="CloseDeleteConfirm">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">确认删除</div>
+                <button class="modal-close" @onclick="CloseDeleteConfirm">✕</button>
+            </div>
+            <p style="color:var(--gray-700);font-size:15px;line-height:1.6;">
+                确定要删除地点 <strong class="text-dark">@deletingLocationName</strong> 吗？<br/>
+                <span class="text-sm text-gray">此操作不可恢复。</span>
+            </p>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseDeleteConfirm">取消</button>
+                <button class="btn btn-danger" @onclick="ConfirmDelete">确认删除</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 错误提示弹框 -->
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="modal-overlay show" @onclick="CloseError">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">操作失败</div>
+                <button class="modal-close" @onclick="CloseError">✕</button>
+            </div>
+            <p style="color:var(--red-600);font-size:15px;line-height:1.6;">@errorMessage</p>
+            <div class="modal-footer">
+                <button class="btn btn-primary" @onclick="CloseError">确定</button>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="card mb-5">
+    <div class="card-header">
+        <div>
+            <div class="card-title">途经路径点</div>
+            <div class="card-subtitle">车辆使用时经过的路径点</div>
+        </div>
+    </div>
+    <div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort1("name"))">名称 @SortInd1("name")</th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort1("desc"))">描述 @SortInd1("desc")</th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort1("sort"))">排序 @SortInd1("sort")</th>
+                <th>状态</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var loc in waypointLocations)
+            {
+                <tr>
+                    <td>@loc.Name</td>
+                    <td>@loc.Description</td>
+                    <td>@loc.SortOrder</td>
+                    <td>
+                        @if (loc.IsActive)
+                        {
+                            <span class="badge badge-green">启用</span>
+                        }
+                        else
+                        {
+                            <span class="badge badge-gray">禁用</span>
+                        }
+                    </td>
+                    <td>
+                        <div class="flex gap-2">
+                            <button class="btn btn-sm btn-info" @onclick="() => Edit(loc)">编辑</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ShowDeleteConfirm(loc.Id, loc.Name)">删除</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<Pagination CurrentPage="locPage1" TotalPages="locTotalPages1" TotalCount="locTotalCount1" OnPageChanged="OnPage1Changed" />
+
+<div class="card mb-5">
+    <div class="card-header">
+        <div>
+            <div class="card-title">最终停车位置</div>
+            <div class="card-subtitle">车辆使用结束时的停车位置</div>
+        </div>
+    </div>
+    <div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort2("name"))">名称 @SortInd2("name")</th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort2("desc"))">描述 @SortInd2("desc")</th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort2("sort"))">排序 @SortInd2("sort")</th>
+                <th>状态</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var loc in purposeLocations)
+            {
+                <tr>
+                    <td>@loc.Name</td>
+                    <td>@loc.Description</td>
+                    <td>@loc.SortOrder</td>
+                    <td>
+                        @if (loc.IsActive)
+                        {
+                            <span class="badge badge-green">启用</span>
+                        }
+                        else
+                        {
+                            <span class="badge badge-gray">禁用</span>
+                        }
+                    </td>
+                    <td>
+                        <div class="flex gap-2">
+                            <button class="btn btn-sm btn-info" @onclick="() => Edit(loc)">编辑</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ShowDeleteConfirm(loc.Id, loc.Name)">删除</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<Pagination CurrentPage="locPage2" TotalPages="locTotalPages2" TotalCount="locTotalCount2" OnPageChanged="OnPage2Changed" />
+
+@code {
+    // ===== UI 状态变量 =====
+    private List<Location> waypointLocations = new();
+    private List<Location> purposeLocations = new();
+    private bool showForm = false;
+    private int editId = 0;
+    private LocationCategory formCategory = LocationCategory.Location;
+    private string formName = "";
+    private string formDescription = "";
+    private int formSortOrder = 0;
+    private bool formIsActive = true;
+    private string errorMessage = null;
+    private bool showDeleteConfirm = false;
+    private int deletingLocationId = 0;
+    private string deletingLocationName = "";
+
+    // ===== 搜索/排序/分页状态 =====
+    private string searchKeyword = "";
+    private string sortCol1 = "sort";
+    private bool sortAsc1 = true;
+    private string sortCol2 = "sort";
+    private bool sortAsc2 = true;
+    private int locPage1 = 1;
+    private int locPage2 = 1;
+    private int pageSize = 10;
+    private int locTotalCount1 = 0;
+    private int locTotalCount2 = 0;
+    private int locTotalPages1 => locTotalCount1 > 0 ? (int)Math.Ceiling((double)locTotalCount1 / pageSize) : 1;
+    private int locTotalPages2 => locTotalCount2 > 0 ? (int)Math.Ceiling((double)locTotalCount2 / pageSize) : 1;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    /// <summary>
+    /// 加载两个分类的地点分页数据（委托给 LocationService）
+    /// </summary>
+    private async Task LoadData()
+    {
+        var result1 = await LocService.GetPagedByCategoryAsync(LocationCategory.Location, searchKeyword, sortCol1, sortAsc1, locPage1, pageSize);
+        waypointLocations = result1.Items;
+        locTotalCount1 = result1.TotalCount;
+        locPage1 = result1.CurrentPage;
+
+        var result2 = await LocService.GetPagedByCategoryAsync(LocationCategory.Purpose, searchKeyword, sortCol2, sortAsc2, locPage2, pageSize);
+        purposeLocations = result2.Items;
+        locTotalCount2 = result2.TotalCount;
+        locPage2 = result2.CurrentPage;
+    }
+
+    private async Task OnPage1Changed(int page) { locPage1 = page; await LoadData(); }
+    private async Task OnPage2Changed(int page) { locPage2 = page; await LoadData(); }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchKeyword = e.Value?.ToString() ?? "";
+        locPage1 = 1;
+        locPage2 = 1;
+        await LoadData();
+    }
+
+    private void ToggleSort1(string col) { if (sortCol1 == col) sortAsc1 = !sortAsc1; else { sortCol1 = col; sortAsc1 = true; } _ = LoadData(); }
+    private void ToggleSort2(string col) { if (sortCol2 == col) sortAsc2 = !sortAsc2; else { sortCol2 = col; sortAsc2 = true; } _ = LoadData(); }
+    private string SortInd1(string col) => sortCol1 != col ? "" : (sortAsc1 ? "▲" : "▼");
+    private string SortInd2(string col) => sortCol2 != col ? "" : (sortAsc2 ? "▲" : "▼");
+
+    private void ShowAddForm(LocationCategory category)
+    {
+        editId = 0;
+        formCategory = category;
+        formName = "";
+        formDescription = "";
+        formSortOrder = 0;
+        formIsActive = true;
+        showForm = true;
+    }
+
+    private void Edit(Location loc)
+    {
+        editId = loc.Id;
+        formCategory = loc.Category;
+        formName = loc.Name;
+        formDescription = loc.Description ?? "";
+        formSortOrder = loc.SortOrder;
+        formIsActive = loc.IsActive;
+        showForm = true;
+    }
+
+    private void CancelForm() => showForm = false;
+
+    /// <summary>
+    /// 保存地点（新增/编辑），委托给 LocationService
+    /// </summary>
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(formName)) return;
+
+        try
+        {
+            if (editId == 0)
+            {
+                await LocService.CreateAsync(formCategory, formName, formDescription, formSortOrder, formIsActive);
+            }
+            else
+            {
+                await LocService.UpdateAsync(editId, formName, formDescription, formSortOrder, formIsActive);
+            }
+
+            showForm = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"保存失败：{ex.Message}";
+        }
+    }
+
+    private void ShowDeleteConfirm(int id, string name)
+    {
+        deletingLocationId = id;
+        deletingLocationName = name;
+        showDeleteConfirm = true;
+    }
+
+    private void CloseDeleteConfirm()
+    {
+        showDeleteConfirm = false;
+        deletingLocationId = 0;
+        deletingLocationName = "";
+    }
+
+    private void CloseError()
+    {
+        errorMessage = null;
+    }
+
+    /// <summary>
+    /// 确认删除地点，委托给 LocationService（含业务校验）
+    /// </summary>
+    private async Task ConfirmDelete()
+    {
+        showDeleteConfirm = false;
+        errorMessage = null;
+
+        var (success, errorMsg) = await LocService.DeleteAsync(deletingLocationId);
+        if (!success)
+        {
+            errorMessage = errorMsg;
+            return;
+        }
+
+        await LoadData();
+    }
+}

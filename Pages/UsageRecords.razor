@@ -1,0 +1,604 @@
+@page "/usage-records"
+@inject UsageRecordService RecordService
+@inject MaintenanceRecordService MaintenanceService
+@inject VehicleService VehicleService
+@inject FileUploadService FileUploadService
+@inject IJSRuntime JS
+
+<div class="flex justify-between items-center mb-5">
+    <div>
+        <h2 class="text-xl font-bold text-dark">使用记录</h2>
+        <p class="text-sm text-gray mt-1">查看所有车辆使用记录详情</p>
+    </div>
+    <input class="input-field" type="text" style="width:260px" placeholder="搜索车牌号/人员/部门..."
+           value="@searchKeyword" @oninput="OnSearchInput" />
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-title">车辆使用记录</div>
+            <div class="card-subtitle">共 @totalCount 条记录</div>
+        </div>
+    </div>
+    <div class="card-body">
+    <div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("vehicle"))">
+                    车辆 @SortIndicator("vehicle")
+                </th>
+                <th>使用部门</th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("person"))">
+                    使用人员 @SortIndicator("person")
+                </th>
+                <th>途经路径点</th>
+                <th>最终停车位置</th>
+                <th>起始里程</th>
+                <th>结束里程</th>
+                <th>附件</th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("created"))">
+                    创建时间 @SortIndicator("created")
+                </th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in records)
+            {
+                <tr>
+                    <td>@(r.Vehicle?.LicensePlate ?? "-")</td>
+                    <td>@(r.Department?.Name ?? "-")</td>
+                    <td>@(r.Personnel?.Name ?? "-")</td>
+                    <td>
+                        @if (r.UsageRecordPurposes != null && r.UsageRecordPurposes.Any())
+                        {
+                            <span>@string.Join(" → ", r.UsageRecordPurposes.OrderBy(p => p.SequenceOrder).Select(p => p.Purpose?.Name ?? "-"))</span>
+                        }
+                        else
+                        {
+                            <span>-</span>
+                        }
+                    </td>
+                    <td>@(r.FinalLocation?.Name ?? "-")</td>
+                    <td>@(r.MileageStart?.ToString("F1") ?? "-")</td>
+                    <td>@(r.MileageEnd?.ToString("F1") ?? "-")</td>
+                    <td>
+                        @{
+                            var files = GetAllFiles(r);
+                        }
+                        @if (files.Any())
+                        {
+                            <button class="btn btn-sm btn-info" @onclick="() => OpenViewer(files, 0)">
+                                @files.Count 个附件
+                            </button>
+                        }
+                        else
+                        {
+                            <span>-</span>
+                        }
+                    </td>
+                    <td>@r.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>
+                        <button class="btn btn-sm btn-danger" @onclick="() => ShowDeleteConfirm(r.Id)">删除</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+    </div>
+</div>
+
+<Pagination CurrentPage="currentPage" TotalPages="totalPages" TotalCount="totalCount" OnPageChanged="OnPageChanged" />
+
+<!-- 维修记录部分 -->
+<div class="flex justify-between items-center mb-5 mt-8">
+    <div>
+        <h2 class="text-xl font-bold text-dark">维修记录</h2>
+        <p class="text-sm text-gray mt-1">查看所有车辆维修记录详情</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <input class="input-field" type="text" style="width:260px" placeholder="搜索车牌号/维修项目..."
+               value="@maintenanceSearchKeyword" @oninput="OnMaintenanceSearchInput" />
+        <button class="btn btn-primary" @onclick="ShowAddMaintenanceForm">+ 新增记录</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-title">车辆维修记录</div>
+            <div class="card-subtitle">共 @maintenanceTotalCount 条记录</div>
+        </div>
+    </div>
+    <div class="card-body">
+    <div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>车牌号</th>
+                <th>所属部门</th>
+                <th>维修日期</th>
+                <th>维修项目</th>
+                <th>费用</th>
+                <th>备注</th>
+                <th>附件</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in maintenanceRecords)
+            {
+                <tr>
+                    <td>@r.Vehicle?.LicensePlate</td>
+                    <td>@(r.Vehicle?.Department?.Name ?? "-")</td>
+                    <td>@r.MaintenanceDate.ToString("yyyy-MM-dd")</td>
+                    <td>@r.Description</td>
+                    <td>@(r.Cost > 0 ? $"¥{r.Cost:F2}" : "-")</td>
+                    <td>@(r.Remarks ?? "-")</td>
+                    <td>
+                        @{
+                            var maintFiles = GetMaintenanceFiles(r);
+                        }
+                        @if (maintFiles.Any())
+                        {
+                            <button class="btn btn-sm btn-info" @onclick="() => OpenViewer(maintFiles, 0)">
+                                @maintFiles.Count 个附件
+                            </button>
+                        }
+                        else
+                        {
+                            <span>-</span>
+                        }
+                    </td>
+                    <td>
+                        <div class="flex gap-2">
+                            <button class="btn btn-sm btn-info" @onclick="() => EditMaintenance(r)">编辑</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ShowDeleteMaintenanceConfirm(r.Id)">删除</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+    </div>
+</div>
+
+<Pagination CurrentPage="maintenanceCurrentPage" TotalPages="maintenanceTotalPages" TotalCount="maintenanceTotalCount" OnPageChanged="OnMaintenancePageChanged" />
+
+@if (!records.Any())
+{
+    <div class="empty-state">
+        <div class="empty-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:36px;height:36px;"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        </div>
+        <div class="empty-title">暂无数据</div>
+        <div class="empty-desc">还没有车辆使用记录。</div>
+    </div>
+}
+
+<!-- 删除确认弹框 -->
+@if (showDeleteConfirm)
+{
+    <div class="modal-overlay show" @onclick="CloseDeleteConfirm">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">确认删除</div>
+                <button class="modal-close" @onclick="CloseDeleteConfirm">✕</button>
+            </div>
+            <p style="color:var(--gray-700);font-size:15px;line-height:1.6;">
+                确定要删除该使用记录吗？<br/>
+                <span class="text-sm text-gray">此操作不可恢复。</span>
+            </p>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseDeleteConfirm">取消</button>
+                <button class="btn btn-danger" @onclick="ConfirmDelete">确认删除</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 错误提示弹框 -->
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="modal-overlay show" @onclick="CloseError">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">操作失败</div>
+                <button class="modal-close" @onclick="CloseError">✕</button>
+            </div>
+            <p style="color:var(--red-600);font-size:15px;line-height:1.6;">@errorMessage</p>
+            <div class="modal-footer">
+                <button class="btn btn-primary" @onclick="CloseError">确定</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 附件查看弹框 -->
+@if (showViewer)
+{
+    <div class="modal-overlay show" @onclick="CloseViewer">
+        <div class="modal" style="max-width:720px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">附件查看 (@(currentFileIndex + 1) / @viewerFiles.Count)</div>
+                <button class="modal-close" @onclick="CloseViewer">✕</button>
+            </div>
+            <div style="text-align:center;min-height:400px;display:flex;align-items:center;justify-content:center;">
+                @if (IsImageFile(viewerFiles[currentFileIndex]))
+                {
+                    <img src="@viewerFiles[currentFileIndex]" style="max-height:500px;max-width:100%;" alt="附件" />
+                }
+                else
+                {
+                    <video src="@viewerFiles[currentFileIndex]" controls style="max-height:500px;max-width:100%;"></video>
+                }
+            </div>
+            <p class="text-sm text-gray text-center mt-3">@Path.GetFileName(viewerFiles[currentFileIndex])</p>
+            <div class="modal-footer">
+                <button class="btn btn-sm btn-secondary" @onclick="PrevFile" disabled="@(currentFileIndex == 0)">← 上一个</button>
+                <span class="text-sm text-gray">@(currentFileIndex + 1) / @viewerFiles.Count</span>
+                <button class="btn btn-sm btn-secondary" @onclick="NextFile" disabled="@(currentFileIndex >= viewerFiles.Count - 1)">下一个 →</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 维修记录新增/编辑弹框 -->
+@if (showMaintenanceForm)
+{
+    <div class="modal-overlay show" @onclick="CancelMaintenanceForm">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">@(maintenanceEditId == 0 ? "新增维修记录" : "编辑维修记录")</div>
+                <button class="modal-close" @onclick="CancelMaintenanceForm">✕</button>
+            </div>
+            <div>
+                <div class="grid grid-2 mb-4">
+                    <div>
+                        <label class="input-label">车辆 <span style="color:var(--red-600)">*</span></label>
+                        <select class="input-field" @bind="maintenanceFormVehicleId">
+                            <option value="0">-- 请选择 --</option>
+                            @foreach (var v in allVehiclesForMaintenance)
+                            {
+                                <option value="@v.Id">@v.LicensePlate (@v.Department?.Name)</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="input-label">维修日期 <span style="color:var(--red-600)">*</span></label>
+                        <input class="input-field" type="date" @bind="maintenanceFormDate" />
+                    </div>
+                </div>
+                <div class="grid grid-2 mb-4">
+                    <div>
+                        <label class="input-label">维修项目/内容 <span style="color:var(--red-600)">*</span></label>
+                        <input class="input-field" type="text" placeholder="如：更换刹车片" @bind="maintenanceFormDescription" />
+                    </div>
+                    <div>
+                        <label class="input-label">维修费用</label>
+                        <input class="input-field" type="number" step="0.01" placeholder="0.00" @bind="maintenanceFormCost" />
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="input-label">备注</label>
+                    <input class="input-field" type="text" placeholder="备注信息（可选）" @bind="maintenanceFormRemarks" />
+                </div>
+                <div class="mb-4">
+                    <label class="input-label">上传附件</label>
+                    <InputFile OnChange="OnMaintenanceFileSelected" multiple accept="image/*" disabled="@maintenanceUploading" />
+                    @if (maintenanceUploading) { <div style="color:var(--primary-600);margin-top:4px;">上传中...</div> }
+                    @if (maintenanceUploadedFiles.Any())
+                    {
+                        <div style="margin-top:4px;">
+                            @foreach (var f in maintenanceUploadedFiles) { <span class="badge badge-green" style="margin-right:4px;">@System.IO.Path.GetFileName(f)</span> }
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CancelMaintenanceForm">取消</button>
+                <button class="btn btn-primary" @onclick="SaveMaintenance">保存</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 维修记录删除确认弹框 -->
+@if (showMaintenanceDeleteConfirm)
+{
+    <div class="modal-overlay show" @onclick="CloseMaintenanceDeleteConfirm">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">确认删除</div>
+                <button class="modal-close" @onclick="CloseMaintenanceDeleteConfirm">✕</button>
+            </div>
+            <p style="color:var(--gray-700);font-size:15px;">确定要删除该维修记录吗？此操作不可恢复。</p>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseMaintenanceDeleteConfirm">取消</button>
+                <button class="btn btn-danger" @onclick="ConfirmDeleteMaintenance">确认删除</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // ===== UI 状态变量 =====
+    private List<VehicleUsageRecord> records = new();
+    private bool showDeleteConfirm = false;
+    private int deletingRecordId = 0;
+    private string errorMessage = null;
+    private bool showViewer = false;
+    private List<string> viewerFiles = new();
+    private int currentFileIndex = 0;
+
+    // ===== 分页/搜索/排序状态 =====
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalCount = 0;
+    private int totalPages => totalCount > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 1;
+    private string searchKeyword = "";
+    private string sortColumn = "created";
+    private bool sortAscending = false;
+
+    // ===== 维修记录状态变量 =====
+    private List<VehicleMaintenanceRecord> maintenanceRecords = new();
+    private List<Vehicle> allVehiclesForMaintenance = new();
+    private bool showMaintenanceForm = false;
+    private int maintenanceEditId = 0;
+    private int maintenanceFormVehicleId = 0;
+    private DateTime maintenanceFormDate = ChinaTime.Now;
+    private string maintenanceFormDescription = "";
+    private decimal maintenanceFormCost = 0;
+    private string maintenanceFormRemarks = "";
+    private List<string> maintenanceUploadedFiles = new();
+    private bool maintenanceUploading = false;
+
+    private string maintenanceSearchKeyword = "";
+    private bool showMaintenanceDeleteConfirm = false;
+    private int maintenanceDeletingId = 0;
+    private int maintenanceCurrentPage = 1;
+    private int maintenancePageSize = 10;
+    private int maintenanceTotalCount = 0;
+    private int maintenanceTotalPages => maintenanceTotalCount > 0 ? (int)Math.Ceiling((double)maintenanceTotalCount / maintenancePageSize) : 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        await LoadMaintenanceData();
+    }
+
+    /// <summary>
+    /// 加载维修记录分页数据
+    /// </summary>
+    private async Task LoadMaintenanceData()
+    {
+        allVehiclesForMaintenance = await VehicleService.GetActiveVehiclesAsync();
+        var result = await MaintenanceService.GetPagedAsync(maintenanceSearchKeyword, maintenanceCurrentPage, maintenancePageSize);
+        maintenanceRecords = result.Items;
+        maintenanceTotalCount = result.TotalCount;
+    }
+
+    private async Task OnMaintenancePageChanged(int page)
+    {
+        maintenanceCurrentPage = page;
+        await LoadMaintenanceData();
+    }
+
+    private async Task OnMaintenanceSearchInput(ChangeEventArgs e)
+    {
+        maintenanceSearchKeyword = e.Value?.ToString() ?? "";
+        maintenanceCurrentPage = 1;
+        await LoadMaintenanceData();
+    }
+
+    // ===== 维修记录弹框方法 =====
+    private void ShowAddMaintenanceForm()
+    {
+        maintenanceEditId = 0;
+        maintenanceFormVehicleId = 0;
+        maintenanceFormDate = ChinaTime.Now;
+        maintenanceFormDescription = "";
+        maintenanceFormCost = 0;
+        maintenanceFormRemarks = "";
+        maintenanceUploadedFiles = new();
+        showMaintenanceForm = true;
+    }
+
+    private void EditMaintenance(VehicleMaintenanceRecord r)
+    {
+        maintenanceEditId = r.Id;
+        maintenanceFormVehicleId = r.VehicleId;
+        maintenanceFormDate = r.MaintenanceDate;
+        maintenanceFormDescription = r.Description ?? "";
+        maintenanceFormCost = r.Cost;
+        maintenanceFormRemarks = r.Remarks ?? "";
+        maintenanceUploadedFiles = r.ImagePaths?.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList() ?? new();
+        showMaintenanceForm = true;
+    }
+
+    private void CancelMaintenanceForm() => showMaintenanceForm = false;
+
+    private async Task OnMaintenanceFileSelected(InputFileChangeEventArgs e)
+    {
+        maintenanceUploading = true;
+        foreach (var file in e.GetMultipleFiles(10))
+        {
+            try
+            {
+                var path = await FileUploadService.UploadFileAsync(file, "维修记录", "通用", "通用");
+                maintenanceUploadedFiles.Add(path);
+            }
+            catch (Exception ex) { errorMessage = $"上传失败：{ex.Message}"; }
+        }
+        maintenanceUploading = false;
+    }
+
+    private async Task SaveMaintenance()
+    {
+        if (maintenanceFormVehicleId == 0 || string.IsNullOrWhiteSpace(maintenanceFormDescription)) return;
+        try
+        {
+            if (maintenanceEditId == 0)
+            {
+                await MaintenanceService.CreateAsync(new VehicleMaintenanceRecord
+                {
+                    VehicleId = maintenanceFormVehicleId,
+                    MaintenanceDate = maintenanceFormDate,
+                    Description = maintenanceFormDescription.Trim(),
+                    Cost = maintenanceFormCost,
+                    Remarks = maintenanceFormRemarks?.Trim(),
+                    ImagePaths = maintenanceUploadedFiles.Any() ? string.Join(";", maintenanceUploadedFiles) : null,
+                    CreatedAt = ChinaTime.Now
+                });
+            }
+            else
+            {
+                var r = await MaintenanceService.GetByIdAsync(maintenanceEditId);
+                if (r != null)
+                {
+                    r.VehicleId = maintenanceFormVehicleId;
+                    r.MaintenanceDate = maintenanceFormDate;
+                    r.Description = maintenanceFormDescription.Trim();
+                    r.Cost = maintenanceFormCost;
+                    r.Remarks = maintenanceFormRemarks?.Trim();
+                    r.ImagePaths = maintenanceUploadedFiles.Any() ? string.Join(";", maintenanceUploadedFiles) : null;
+                    await MaintenanceService.UpdateAsync(r);
+                }
+            }
+            showMaintenanceForm = false;
+            await LoadMaintenanceData();
+        }
+        catch (Exception ex) { errorMessage = $"保存失败：{ex.Message}"; }
+    }
+
+    private void ShowDeleteMaintenanceConfirm(int id)
+    {
+        maintenanceDeletingId = id;
+        showMaintenanceDeleteConfirm = true;
+    }
+
+    private void CloseMaintenanceDeleteConfirm()
+    {
+        showMaintenanceDeleteConfirm = false;
+        maintenanceDeletingId = 0;
+    }
+
+    private async Task ConfirmDeleteMaintenance()
+    {
+        showMaintenanceDeleteConfirm = false;
+        errorMessage = null;
+
+        var (success, error) = await MaintenanceService.DeleteAsync(maintenanceDeletingId);
+        if (!success) { errorMessage = error; return; }
+        await LoadMaintenanceData();
+    }
+
+    /// <summary>
+    /// 加载使用记录分页数据（委托给 UsageRecordService）
+    /// </summary>
+    private async Task LoadData()
+    {
+        var result = await RecordService.GetPagedAsync(searchKeyword, sortColumn, sortAscending, currentPage, pageSize);
+        records = result.Items;
+        totalCount = result.TotalCount;
+        currentPage = result.CurrentPage;
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        await LoadData();
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchKeyword = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private void ToggleSort(string column)
+    {
+        if (sortColumn == column) sortAscending = !sortAscending;
+        else { sortColumn = column; sortAscending = true; }
+        _ = LoadData();
+    }
+
+    private string SortIndicator(string column) => sortColumn != column ? "" : (sortAscending ? "▲" : "▼");
+
+    private void ShowDeleteConfirm(int id)
+    {
+        deletingRecordId = id;
+        showDeleteConfirm = true;
+    }
+
+    private void CloseDeleteConfirm()
+    {
+        showDeleteConfirm = false;
+        deletingRecordId = 0;
+    }
+
+    private void CloseError()
+    {
+        errorMessage = null;
+    }
+
+    /// <summary>
+    /// 确认删除使用记录，委托给 UsageRecordService
+    /// </summary>
+    private async Task ConfirmDelete()
+    {
+        showDeleteConfirm = false;
+        errorMessage = null;
+
+        var (success, errorMsg) = await RecordService.DeleteAsync(deletingRecordId);
+        if (!success)
+        {
+            errorMessage = errorMsg;
+            return;
+        }
+
+        await LoadData();
+    }
+
+    /// <summary>
+    /// 获取记录的所有附件路径（委托给 UsageRecordService）
+    /// </summary>
+    private List<string> GetAllFiles(VehicleUsageRecord r) => RecordService.GetAllFiles(r);
+
+    /// <summary>
+    /// 获取维修记录的所有附件路径（按分号拆分 ImagePaths）
+    /// </summary>
+    private List<string> GetMaintenanceFiles(VehicleMaintenanceRecord r) =>
+        string.IsNullOrEmpty(r.ImagePaths)
+            ? new List<string>()
+            : r.ImagePaths.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList();
+
+    /// <summary>
+    /// 判断文件是否为图片（委托给 UsageRecordService）
+    /// </summary>
+    private bool IsImageFile(string path) => RecordService.IsImageFile(path);
+
+    private void OpenViewer(List<string> files, int startIndex)
+    {
+        viewerFiles = files;
+        currentFileIndex = startIndex;
+        showViewer = true;
+    }
+
+    private void CloseViewer() => showViewer = false;
+
+    private void PrevFile()
+    {
+        if (currentFileIndex > 0) currentFileIndex--;
+    }
+
+    private void NextFile()
+    {
+        if (currentFileIndex < viewerFiles.Count - 1) currentFileIndex++;
+    }
+}

@@ -1,0 +1,160 @@
+@page "/maintenance-records"
+@inject MaintenanceRecordService MaintenanceService
+@inject VehicleService VehicleService
+@inject NavigationManager Nav
+
+<div class="flex justify-between items-center mb-5">
+    <div>
+        <h2 class="text-xl font-bold text-dark">维修记录管理</h2>
+        <p class="text-sm text-gray mt-1">查看和管理所有车辆维修记录</p>
+    </div>
+    <button class="btn btn-secondary" @onclick="GoToVehicles">← 返回车辆列表</button>
+</div>
+
+<!-- 删除确认弹框 -->
+@if (showDeleteConfirm)
+{
+    <div class="modal-overlay show" @onclick="CloseDeleteConfirm">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">确认删除</div>
+                <button class="modal-close" @onclick="CloseDeleteConfirm">✕</button>
+            </div>
+            <p style="color:var(--gray-700);font-size:15px;line-height:1.6;">
+                确定要删除这条维修记录吗？<br/>
+                <span class="text-sm text-gray">车辆：@deletingVehicleName，项目：@deletingDescription</span>
+            </p>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseDeleteConfirm">取消</button>
+                <button class="btn btn-danger" @onclick="ConfirmDelete">确认删除</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 错误提示 -->
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="modal-overlay show" @onclick="CloseError">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">操作失败</div>
+                <button class="modal-close" @onclick="CloseError">✕</button>
+            </div>
+            <p style="color:var(--red-600);font-size:15px;line-height:1.6;">@errorMessage</p>
+            <div class="modal-footer">
+                <button class="btn btn-primary" @onclick="CloseError">确定</button>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-title">维修记录列表</div>
+            <div class="card-subtitle">共 @totalCount 条记录</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <input class="input-field" type="text" style="width:220px" placeholder="搜索车牌号/维修项目..."
+                   value="@searchKeyword" @oninput="OnSearchInput" />
+        </div>
+    </div>
+    <div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>车牌号</th>
+                <th>所属部门</th>
+                <th>维修日期</th>
+                <th>维修项目</th>
+                <th>费用(元)</th>
+                <th>备注</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in records)
+            {
+                <tr>
+                    <td><a href="/maintenance/@r.VehicleId" style="color:var(--primary-600);text-decoration:none;">@r.Vehicle?.LicensePlate ?? "-"</a></td>
+                    <td>@(r.Vehicle?.Department?.Name ?? "-")</td>
+                    <td>@r.MaintenanceDate.ToString("yyyy-MM-dd")</td>
+                    <td>@r.Description</td>
+                    <td>@r.Cost.ToString("F2")</td>
+                    <td>@(r.Remarks ?? "-")</td>
+                    <td>
+                        <div class="flex gap-2">
+                            <button class="btn btn-sm btn-outline" @onclick="() => GoToMaintenance(r.VehicleId)">查看/编辑</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ShowDeleteConfirm(r)">删除</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<Pagination CurrentPage="currentPage" TotalPages="totalPages" TotalCount="totalCount" OnPageChanged="OnPageChanged" />
+
+@code {
+    private List<VehicleMaintenanceRecord> records = new();
+    private string searchKeyword = "";
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalCount = 0;
+    private int totalPages => totalCount > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 1;
+
+    private bool showDeleteConfirm = false;
+    private int deletingId = 0;
+    private string deletingVehicleName = "";
+    private string deletingDescription = "";
+    private string errorMessage = "";
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        var result = await MaintenanceService.GetPagedAsync(searchKeyword, currentPage, pageSize);
+        records = result.Items;
+        totalCount = result.TotalCount;
+        currentPage = result.CurrentPage;
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        await LoadData();
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchKeyword = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private void ShowDeleteConfirm(VehicleMaintenanceRecord r)
+    {
+        deletingId = r.Id;
+        deletingVehicleName = r.Vehicle?.LicensePlate ?? "";
+        deletingDescription = r.Description ?? "";
+        showDeleteConfirm = true;
+    }
+
+    private void CloseDeleteConfirm() => showDeleteConfirm = false;
+
+    private void CloseError() => errorMessage = "";
+
+    private void GoToVehicles() => Nav.NavigateTo("/vehicles");
+    private void GoToMaintenance(int vehicleId) => Nav.NavigateTo($"/maintenance/{vehicleId}");
+
+    private async Task ConfirmDelete()
+    {
+        showDeleteConfirm = false;
+        var (success, error) = await MaintenanceService.DeleteAsync(deletingId);
+        if (!success) errorMessage = error;
+        else await LoadData();
+    }
+}

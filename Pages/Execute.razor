@@ -1,0 +1,257 @@
+@page "/execute/{Token}"
+@layout vehicleManagement.Components.Layouts.MobileLayout
+@inject ExecuteService ExecService
+@inject VehicleService VehicleService
+@inject MaintenanceRecordService MaintenanceService
+@inject LocationService LocationService
+@inject NavigationManager Nav
+@inject FileUploadService FileUploadService
+@inject IJSRuntime JS
+
+<div class="exec-page">
+    <div class="exec-header">
+        <div class="exec-header-title">车辆使用登记</div>
+        @if (!loading && vehicle != null && !saved)
+        {
+            <div class="exec-header-desc">请填写以下信息并提交</div>
+        }
+    </div>
+
+    @if (loading)
+    {
+        <div class="exec-loading-page">
+            <div class="exec-spinner" style="width:36px;height:36px;border-width:3px;"></div>
+            <div class="exec-loading-text">正在加载车辆信息...</div>
+        </div>
+    }
+    else if (vehicle == null)
+    {
+        <div class="exec-state">
+            <div class="exec-state-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+            </div>
+            <div class="exec-state-title">未找到车辆</div>
+            <div class="exec-state-desc">请确认二维码是否正确</div>
+        </div>
+    }
+    else if (saved)
+    {
+        <div class="exec-success-page">
+            <div class="exec-success-check">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+            </div>
+            <div class="exec-success-title">提交成功！</div>
+            <div class="exec-success-desc">记录已保存，页面即将自动关闭</div>
+            <div class="exec-success-countdown">@countdown</div>
+        </div>
+    }
+    else
+    {
+        @* Vehicle Info *@
+        <div class="exec-card">
+            <div class="exec-card-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12.42V16h2"/>
+                    <circle cx="6.5" cy="16.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/>
+                </svg>
+                <span class="exec-card-title">车辆信息</span>
+            </div>
+            <div class="exec-card-body">
+                <div class="exec-vehicle-grid">
+                    <div class="exec-vehicle-item">
+                        <span class="exec-vehicle-label">车牌号</span>
+                        <span class="exec-vehicle-value">@vehicle.LicensePlate</span>
+                    </div>
+                    <div class="exec-vehicle-item">
+                        <span class="exec-vehicle-label">所属部门</span>
+                        <span class="exec-vehicle-value">@(vehicle.Department?.Name ?? "-")</span>
+                    </div>
+                    <div class="exec-vehicle-item">
+                        <span class="exec-vehicle-label">品牌/型号</span>
+                        <span class="exec-vehicle-value">@vehicle.Brand @vehicle.Model</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* Segmented Tab *@
+        <div class="exec-card">
+            <div class="exec-card-body" style="padding:12px 20px;">
+                <div class="exec-segment">
+                    <button class="exec-segment-btn @(activeTab=="usage"?"active":"")" @onclick="@(() => { activeTab = "usage"; ClearErrors(); })">
+                        使用
+                    </button>
+                    <button class="exec-segment-btn @(activeTab=="borrow"?"active":"")" @onclick="@(() => { activeTab = "borrow"; ClearErrors(); })">
+                        借车
+                    </button>
+                    <button class="exec-segment-btn @(activeTab=="maintenance"?"active":"")" @onclick="@(() => { activeTab = "maintenance"; ClearErrors(); })">
+                        维修
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @* Form Card *@
+        <div class="exec-card">
+            <div class="exec-card-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+                <span class="exec-card-title">@(activeTab=="usage"?"车辆使用登记":activeTab=="maintenance"?"车辆维修登记":"借车登记")</span>
+            </div>
+            <div class="exec-card-body">
+
+                @if (activeTab == "usage")
+                {
+                    @* 使用人员 *@
+                    <div class="exec-field">
+                        <label class="exec-label">使用人员 <span class="exec-required">*</span></label>
+                        <select class="exec-select" @bind="selectedPersonnelId">
+                            <option value="0">-- 请选择 --</option>
+                            @foreach (var p in personnelList) { <option value="@p.Id">@p.Name (@p.Phone)</option> }
+                        </select>
+                    </div>
+                    @* 路径点 *@
+                    <div class="exec-field">
+                        <label class="exec-label">
+                            途经路径点 <span class="exec-required">*</span>
+                            <span style="font-weight:400;font-size:12px;color:var(--ds-fg-muted);">（按顺序点选）</span>
+                        </label>
+                        <div class="exec-selected-tags">
+                            @if (selectedWaypoints.Any())
+                            {
+                                @for (int i = 0; i < selectedWaypoints.Count; i++)
+                                {
+                                    var wp = selectedWaypoints[i];
+                                    <span class="exec-tag" @onclick="() => RemoveWaypoint(wp.Id)">@(i + 1). @wp.Name</span>
+                                }
+                            }
+                            else { <span class="exec-hint">请点击下方选项添加</span> }
+                        </div>
+                        <div class="exec-waypoints">
+                            @foreach (var wp in allWaypoints)
+                            {
+                                var sel = selectedWaypoints.Any(s => s.Id == wp.Id);
+                                <button class="exec-wp-btn @(sel?"active":"")" @onclick="() => ToggleWaypoint(wp)">@wp.Name</button>
+                            }
+                        </div>
+                    </div>
+                    @* 停车位置 *@
+                    <div class="exec-field">
+                        <label class="exec-label">最终停车位置 <span class="exec-required">*</span></label>
+                        <select class="exec-select" @bind="selectedFinalLocationId">
+                            <option value="0">-- 请选择 --</option>
+                            @foreach (var loc in allFinalLocations) { <option value="@loc.Id">@loc.Name</option> }
+                        </select>
+                    </div>
+                    @* 里程 *@
+                    <div class="exec-row">
+                        <div class="exec-field"><label class="exec-label">起始里程 (km)</label><input class="exec-input" type="number" step="0.1" placeholder="0.0" @bind="mileageStart" /></div>
+                        <div class="exec-field"><label class="exec-label">结束里程 (km)</label><input class="exec-input" type="number" step="0.1" placeholder="0.0" @bind="mileageEnd" /></div>
+                    </div>
+                    @* 备注 *@
+                    <div class="exec-field"><label class="exec-label">备注</label><input class="exec-input" type="text" placeholder="备注信息（可选）" @bind="remarks" /></div>
+                    @* 附件 *@
+                    <div class="exec-field">
+                        <label class="exec-label">上传附件（支持图片和视频）</label>
+                        <div class="exec-file-area"><InputFile OnChange="OnFileSelected" multiple accept="image/*,video/*" disabled="@uploading" /></div>
+                        @if (uploading) { <div class="exec-uploading"><span class="exec-spinner"></span>正在上传文件...</div> }
+                        @if (uploadedFiles.Any()) { <div class="exec-uploaded">@foreach (var f in uploadedFiles) { <span class="exec-file-tag">@Path.GetFileName(f)</span> }</div> }
+                    </div>
+                    @if (!string.IsNullOrEmpty(errorMessage)) { <div class="exec-error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>@errorMessage</div> }
+                    <button class="exec-submit" @onclick="SaveRecord" disabled="@(saving || uploading)">
+                        @if (saving) { <span class="exec-spinner" style="width:20px;height:20px;border-color:rgba(255,255,255,0.3);border-top-color:#fff;"></span> }
+                        @(saving ? "提交中..." : uploading ? "文件上传中..." : "保存使用记录")
+                    </button>
+                }
+                else if (activeTab == "maintenance")
+                {
+                    <div class="exec-field"><label class="exec-label">维修日期 <span class="exec-required">*</span></label><input class="exec-input" type="date" @bind="maintDate" @bind:format="yyyy-MM-dd" /></div>
+                    <div class="exec-field"><label class="exec-label">维修项目/内容 <span class="exec-required">*</span></label><input class="exec-input" type="text" placeholder="如：更换刹车片、发动机检修" @bind="maintDesc" /></div>
+                    <div class="exec-field"><label class="exec-label">维修费用 (元)</label><input class="exec-input" type="number" step="0.01" placeholder="0.00" @bind="maintCost" /></div>
+                    <div class="exec-field"><label class="exec-label">备注</label><input class="exec-input" type="text" placeholder="备注信息（可选）" @bind="maintRemarks" /></div>
+                    <div class="exec-field">
+                        <label class="exec-label">上传附件（图片）</label>
+                        <div class="exec-file-area"><InputFile OnChange="OnMaintFileSelected" multiple accept="image/*" disabled="@maintUploading" /></div>
+                        @if (maintUploading) { <div class="exec-uploading"><span class="exec-spinner"></span>正在上传...</div> }
+                        @if (maintFiles.Any()) { <div class="exec-uploaded">@foreach (var f in maintFiles) { <span class="exec-file-tag">@System.IO.Path.GetFileName(f)</span> }</div> }
+                    </div>
+                    @if (!string.IsNullOrEmpty(maintError)) { <div class="exec-error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>@maintError</div> }
+                    <button class="exec-submit warning" @onclick="SaveMaintenance" disabled="@(maintSaving || maintUploading)">
+                        @if (maintSaving) { <span class="exec-spinner" style="width:20px;height:20px;border-color:rgba(255,255,255,0.3);border-top-color:#fff;"></span> }
+                        @(maintSaving ? "保存中..." : "保存维修记录")
+                    </button>
+                }
+                else if (activeTab == "borrow")
+                {
+                    <div class="exec-field">
+                        <label class="exec-label">所属部门 <span class="exec-required">*</span></label>
+                        <select class="exec-select" value="@borrowDeptId" @onchange="OnBorrowDeptChanged">
+                            <option value="0">-- 请选择 --</option>
+                            @foreach (var d in allDepartments) { <option value="@d.Id">@d.Name</option> }
+                        </select>
+                    </div>
+                    <div class="exec-field">
+                        <label class="exec-label">使用人员 <span class="exec-required">*</span></label>
+                        <select class="exec-select" @bind="borrowPersonnelId">
+                            <option value="0">-- 请选择人员 --</option>
+                            @foreach (var p in borrowPersonnel) { <option value="@p.Id">@p.Name (@p.Phone)</option> }
+                        </select>
+                    </div>
+                    <div class="exec-field">
+                        <label class="exec-label">
+                            途经路径点 <span class="exec-required">*</span>
+                            <span style="font-weight:400;font-size:12px;color:var(--ds-fg-muted);">（按顺序点选）</span>
+                        </label>
+                        <div class="exec-selected-tags">
+                            @if (borrowWaypoints.Any())
+                            {
+                                @for (int i = 0; i < borrowWaypoints.Count; i++)
+                                {
+                                    var wp = borrowWaypoints[i];
+                                    <span class="exec-tag" @onclick="() => RemoveBorrowWaypoint(wp.Id)">@(i + 1). @wp.Name</span>
+                                }
+                            }
+                            else { <span class="exec-hint">请点击下方选项添加</span> }
+                        </div>
+                        <div class="exec-waypoints">
+                            @foreach (var wp in allWaypoints)
+                            {
+                                var sel = borrowWaypoints.Any(s => s.Id == wp.Id);
+                                <button class="exec-wp-btn @(sel?"active":"")" @onclick="() => ToggleBorrowWaypoint(wp)">@wp.Name</button>
+                            }
+                        </div>
+                    </div>
+                    <div class="exec-field">
+                        <label class="exec-label">最终停车位置 <span class="exec-required">*</span></label>
+                        <select class="exec-select" @bind="borrowFinalLocId">
+                            <option value="0">-- 请选择 --</option>
+                            @foreach (var loc in allFinalLocations) { <option value="@loc.Id">@loc.Name</option> }
+                        </select>
+                    </div>
+                    <div class="exec-row">
+                        <div class="exec-field"><label class="exec-label">起始里程 (km)</label><input class="exec-input" type="number" step="0.1" placeholder="0.0" @bind="borrowMileageStart" /></div>
+                        <div class="exec-field"><label class="exec-label">结束里程 (km)</label><input class="exec-input" type="number" step="0.1" placeholder="0.0" @bind="borrowMileageEnd" /></div>
+                    </div>
+                    <div class="exec-field"><label class="exec-label">备注</label><input class="exec-input" type="text" placeholder="备注信息（可选）" @bind="borrowRemarks" /></div>
+                    <div class="exec-field">
+                        <label class="exec-label">上传附件（支持图片和视频）</label>
+                        <div class="exec-file-area"><InputFile OnChange="OnBorrowFileSelected" multiple accept="image/*,video/*" disabled="@borrowUploading" /></div>
+                        @if (borrowUploading) { <div class="exec-uploading"><span class="exec-spinner"></span>正在上传...</div> }
+                        @if (borrowFiles.Any()) { <div class="exec-uploaded">@foreach (var f in borrowFiles) { <span class="exec-file-tag">@System.IO.Path.GetFileName(f)</span> }</div> }
+                    </div>
+                    @if (!string.IsNullOrEmpty(borrowError)) { <div class="exec-error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>@borrowError</div> }
+                    <button class="exec-submit accent" @onclick="SaveBorrow" disabled="@(borrowSaving || borrowUploading)">
+                        @if (borrowSaving) { <span class="exec-spinner" style="width:20px;height:20px;border-color:rgba(255,255,255,0.3);border-top-color:#fff;"></span> }
+                        @(borrowSaving ? "保存中..." : "保存借车记录")
+                    </button>
+                }
+            </div>
+        </div>
+    }
+</div>

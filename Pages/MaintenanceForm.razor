@@ -1,0 +1,178 @@
+@page "/maintenance/{VehicleId:int}"
+@inject VehicleService VehicleService
+@inject MaintenanceRecordService MaintenanceService
+@inject LocationService LocationService
+@inject FileUploadService FileUploadService
+@inject NavigationManager Nav
+
+<div class="flex justify-between items-center mb-5">
+    <div>
+        <h2 class="text-xl font-bold text-dark">车辆维修登记</h2>
+        <p class="text-sm text-gray mt-1">记录车辆维修信息</p>
+    </div>
+    <button class="btn btn-secondary" @onclick="GoToVehicles">← 返回车辆列表</button>
+</div>
+
+@if (loading)
+{
+    <div style="text-align:center;padding:40px;color:var(--gray-500);">加载中...</div>
+}
+else if (vehicle == null)
+{
+    <div style="text-align:center;padding:40px;color:var(--gray-500);">未找到车辆信息</div>
+}
+else if (saved)
+{
+    <div style="text-align:center;padding:60px 20px;">
+        <div style="font-size:48px;color:var(--primary-600);margin-bottom:16px;">✓</div>
+        <div style="font-size:18px;font-weight:600;color:var(--dark);margin-bottom:8px;">维修记录已保存</div>
+        <div style="color:var(--gray-500);margin-bottom:20px;">车辆 @vehicle.LicensePlate 的维修信息已成功记录</div>
+        <button class="btn btn-primary" @onclick="Reset">继续登记</button>
+    </div>
+}
+else
+{
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">车辆信息</div>
+            </div>
+            <div style="padding:0 20px 20px;">
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                    <div><span style="color:var(--gray-600);font-size:13px;">车牌号</span><div style="font-weight:600;font-size:18px;color:var(--dark);">@vehicle.LicensePlate</div></div>
+                    <div><span style="color:var(--gray-600);font-size:13px;">所属部门</span><div style="font-weight:500;">@(vehicle.Department?.Name ?? "-")</div></div>
+                    <div><span style="color:var(--gray-600);font-size:13px;">品牌/型号</span><div style="font-weight:500;">@vehicle.Brand @vehicle.Model</div></div>
+                    <div><span style="color:var(--gray-600);font-size:13px;">颜色</span><div style="font-weight:500;">@(vehicle.Color ?? "-")</div></div>
+                    <div><span style="color:var(--gray-600);font-size:13px;">状态</span><div>
+                        @if (vehicle.Status == VehicleStatus.Active) { <span class="badge badge-green">在用</span> }
+                        else if (vehicle.Status == VehicleStatus.Maintenance) { <span class="badge badge-orange">维修</span> }
+                        else { <span class="badge badge-gray">退役</span> }
+                    </div></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">维修信息登记</div>
+            </div>
+            <div style="padding:0 20px 20px;">
+                <div class="grid grid-1 mb-4">
+                    <div>
+                        <label class="input-label">维修日期 <span style="color:var(--red-600)">*</span></label>
+                        <input class="input-field" type="date" @bind="formMaintenanceDate" />
+                    </div>
+                </div>
+                <div class="grid grid-1 mb-4">
+                    <div>
+                        <label class="input-label">维修项目/内容 <span style="color:var(--red-600)">*</span></label>
+                        <input class="input-field" type="text" placeholder="如：更换刹车片、发动机检修" @bind="formDescription" />
+                    </div>
+                </div>
+                <div class="grid grid-1 mb-4">
+                    <div>
+                        <label class="input-label">维修费用 (元)</label>
+                        <input class="input-field" type="number" step="0.01" placeholder="0.00" @bind="formCost" />
+                    </div>
+                </div>
+                <div class="grid grid-1 mb-4">
+                    <div>
+                        <label class="input-label">备注</label>
+                        <input class="input-field" type="text" placeholder="备注信息（可选）" @bind="formRemarks" />
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="input-label">上传附件</label>
+                    <InputFile OnChange="OnFileSelected" multiple accept="image/*" disabled="@uploading" />
+                    @if (uploading) { <div style="color:var(--primary-600);margin-top:4px;">上传中...</div> }
+                    @if (uploadedFiles.Any())
+                    {
+                        <div style="margin-top:4px;">
+                            @foreach (var f in uploadedFiles) { <span class="badge badge-green" style="margin-right:4px;">@System.IO.Path.GetFileName(f)</span> }
+                        </div>
+                    }
+                </div>
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div style="color:var(--red-600);margin-bottom:12px;font-size:14px;">@errorMessage</div>
+                }
+                <button class="btn btn-primary" style="width:100%;" @onclick="Save" disabled="@saving">@(saving ? "保存中..." : "保存维修记录")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int VehicleId { get; set; }
+
+    private bool loading = true;
+    private bool saving = false;
+    private bool saved = false;
+    private bool uploading = false;
+    private Vehicle vehicle;
+    private List<string> uploadedFiles = new();
+    private DateTime formMaintenanceDate = ChinaTime.Now;
+    private string formDescription = "";
+    private decimal formCost = 0;
+    private string formRemarks = "";
+    private string errorMessage = "";
+
+    private void GoToVehicles() => Nav.NavigateTo("/vehicles");
+
+    protected override async Task OnInitializedAsync()
+    {
+        vehicle = await VehicleService.GetVehicleByIdAsync(VehicleId);
+        loading = false;
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        uploading = true;
+        var deptName = vehicle?.Department?.Name ?? "未知部门";
+        var plate = vehicle?.LicensePlate ?? "未知车牌";
+        foreach (var file in e.GetMultipleFiles(10))
+        {
+            try
+            {
+                var path = await FileUploadService.UploadFileAsync(file, deptName, plate, "维修");
+                uploadedFiles.Add(path);
+            }
+            catch (Exception ex) { errorMessage = $"上传失败：{ex.Message}"; }
+        }
+        uploading = false;
+    }
+
+    private async Task Save()
+    {
+        errorMessage = "";
+        if (string.IsNullOrWhiteSpace(formDescription)) { errorMessage = "请输入维修项目"; return; }
+
+        saving = true;
+        try
+        {
+            await MaintenanceService.CreateAsync(new VehicleMaintenanceRecord
+            {
+                VehicleId = VehicleId,
+                MaintenanceDate = formMaintenanceDate,
+                Description = formDescription.Trim(),
+                Cost = formCost,
+                Remarks = formRemarks?.Trim(),
+                ImagePaths = uploadedFiles.Any() ? string.Join(";", uploadedFiles) : null,
+                CreatedAt = ChinaTime.Now
+            });
+            saved = true;
+        }
+        catch (Exception ex) { errorMessage = $"保存失败：{ex.Message}"; }
+        finally { saving = false; }
+    }
+
+    private void Reset()
+    {
+        saved = false;
+        formMaintenanceDate = ChinaTime.Now;
+        formDescription = "";
+        formCost = 0;
+        formRemarks = "";
+        uploadedFiles = new();
+    }
+}

@@ -1,0 +1,409 @@
+@page "/vehicles"
+@inject VehicleService VehicleService
+@inject QrCodeService QrCodeService
+@inject VehicleExportService ExportService
+@inject IJSRuntime JS
+@inject IHttpContextAccessor HttpContextAccessor
+@inject NavigationManager Nav
+
+<div class="flex justify-between items-center mb-5">
+    <div>
+        <h2 class="text-xl font-bold text-dark">车辆管理</h2>
+        <p class="text-sm text-gray mt-1">管理车辆信息、状态和二维码</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <input class="input-field" type="text" style="width:260px" placeholder="搜索车牌号/品牌/型号/颜色..."
+               value="@searchKeyword" @oninput="OnSearchInput" />
+        <button class="btn btn-primary" @onclick="ShowAddForm">+ 新增车辆</button>
+    </div>
+</div>
+
+<!-- 新增/编辑弹框 -->
+@if (showForm)
+{
+    <div class="modal-overlay show" @onclick="CancelForm">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">@(editId == 0 ? "新增车辆" : "编辑车辆")</div>
+                <button class="modal-close" @onclick="CancelForm">✕</button>
+            </div>
+            <div>
+                <div class="grid grid-3 mb-4">
+                    <div>
+                        <label class="input-label">车牌号</label>
+                        <input class="input-field" type="text" placeholder="如：京A12345" @bind="formLicensePlate" />
+                    </div>
+                    <div>
+                        <label class="input-label">所属部门</label>
+                        <select class="input-field" @bind="formDeptId">
+                            <option value="0">-- 请选择 --</option>
+                            @foreach (var d in allDepartments)
+                            {
+                                <option value="@d.Id">@d.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="input-label">品牌</label>
+                        <input class="input-field" type="text" placeholder="如：丰田" @bind="formBrand" />
+                    </div>
+                </div>
+                <div class="grid grid-3 mb-4">
+                    <div>
+                        <label class="input-label">型号</label>
+                        <input class="input-field" type="text" placeholder="如：凯美瑞" @bind="formModel" />
+                    </div>
+                    <div>
+                        <label class="input-label">颜色</label>
+                        <input class="input-field" type="text" placeholder="如：白色" @bind="formColor" />
+                    </div>
+                    <div>
+                        <label class="input-label">年份</label>
+                        <input class="input-field" type="number" placeholder="如：2024" @bind="formYear" />
+                    </div>
+                </div>
+                <div class="grid grid-3 mb-4">
+                    <div>
+                        <label class="input-label">状态</label>
+                        <select class="input-field" @bind="formStatus">
+                            <option value="@VehicleStatus.Active">在用</option>
+                            <option value="@VehicleStatus.Maintenance">维修</option>
+                            <option value="@VehicleStatus.Retired">退役</option>
+                        </select>
+                    </div>
+                    <div style="grid-column: span 2">
+                        <label class="input-label">备注</label>
+                        <input class="input-field" type="text" placeholder="备注信息（可选）" @bind="formRemarks" />
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CancelForm">取消</button>
+                <button class="btn btn-primary" @onclick="Save">保存</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 删除确认弹框 -->
+@if (showDeleteConfirm)
+{
+    <div class="modal-overlay show" @onclick="CloseDeleteConfirm">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">确认删除</div>
+                <button class="modal-close" @onclick="CloseDeleteConfirm">✕</button>
+            </div>
+            <p style="color:var(--gray-700);font-size:15px;line-height:1.6;">
+                确定要删除车辆 <strong class="text-dark">@deletingVehicleName</strong> 吗？<br/>
+                <span class="text-sm text-gray">此操作不可恢复。</span>
+            </p>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseDeleteConfirm">取消</button>
+                <button class="btn btn-danger" @onclick="ConfirmDelete">确认删除</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 错误提示弹框 -->
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="modal-overlay show" @onclick="CloseError">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">操作失败</div>
+                <button class="modal-close" @onclick="CloseError">✕</button>
+            </div>
+            <p style="color:var(--red-600);font-size:15px;line-height:1.6;">@errorMessage</p>
+            <div class="modal-footer">
+                <button class="btn btn-primary" @onclick="CloseError">确定</button>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-title">车辆列表</div>
+            <div class="card-subtitle">共 @totalCount 辆车</div>
+        </div>
+    </div>
+    <div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("plate"))">车牌号 @SortIndicator("plate")</th>
+                <th>所属部门</th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("brand"))">品牌/型号 @SortIndicator("brand")</th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("color"))">颜色 @SortIndicator("color")</th>
+                <th>状态</th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("created"))">创建时间 @SortIndicator("created")</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var v in vehicles)
+            {
+                <tr>
+                    <td>@v.LicensePlate</td>
+                    <td>@(v.Department?.Name ?? "-")</td>
+                    <td>@v.Brand @v.Model</td>
+                    <td>@v.Color</td>
+                    <td>
+                        @if (v.Status == VehicleStatus.Active)
+                        {
+                            <span class="badge badge-green">在用</span>
+                        }
+                        else if (v.Status == VehicleStatus.Maintenance)
+                        {
+                            <span class="badge badge-orange">维修</span>
+                        }
+                        else
+                        {
+                            <span class="badge badge-gray">退役</span>
+                        }
+                    </td>
+                    <td>@v.CreatedAt.ToString("yyyy-MM-dd")</td>
+                    <td>
+                        <div class="flex gap-2" style="flex-wrap:wrap;">
+                            <button class="btn btn-sm btn-info" @onclick="() => Edit(v)">编辑</button>
+                            <button class="btn btn-sm btn-outline" @onclick="() => DownloadQrCode(v)">下载二维码</button>
+                            <button class="btn btn-sm btn-outline" @onclick="() => ExportExcel(v)">导出Excel</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ShowDeleteConfirm(v.Id, v.LicensePlate)">删除</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<Pagination CurrentPage="currentPage" TotalPages="totalPages" TotalCount="totalCount" OnPageChanged="OnPageChanged" />
+
+@code {
+    // ===== UI 状态变量 =====
+    private List<Vehicle> vehicles = new();
+    private List<Department> allDepartments = new();
+    private bool showForm = false;
+    private int editId = 0;
+    private string formLicensePlate = "";
+    private int formDeptId = 0;
+    private string formBrand = "";
+    private string formModel = "";
+    private string formColor = "";
+    private int? formYear;
+    private VehicleStatus formStatus = VehicleStatus.Active;
+    private string formRemarks = "";
+
+    private string errorMessage = null;
+    private bool showDeleteConfirm = false;
+    private int deletingVehicleId = 0;
+    private string deletingVehicleName = "";
+
+    // ===== 分页/搜索/排序状态 =====
+    private string searchKeyword = "";
+    private string sortColumn = "created";
+    private bool sortAscending = false;
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalCount = 0;
+    private int totalPages => totalCount > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 1;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    /// <summary>
+    /// 加载车辆分页数据（委托给 VehicleService）
+    /// </summary>
+    private async Task LoadData()
+    {
+        allDepartments = await VehicleService.GetAllDepartmentsAsync();
+        var result = await VehicleService.GetPagedAsync(searchKeyword, sortColumn, sortAscending, currentPage, pageSize);
+        vehicles = result.Items;
+        totalCount = result.TotalCount;
+        currentPage = result.CurrentPage;
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        await LoadData();
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchKeyword = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private void ToggleSort(string column)
+    {
+        if (sortColumn == column) sortAscending = !sortAscending;
+        else { sortColumn = column; sortAscending = true; }
+        _ = LoadData();
+    }
+
+    private string SortIndicator(string column) => sortColumn != column ? "" : (sortAscending ? "▲" : "▼");
+
+    private void ShowAddForm()
+    {
+        editId = 0;
+        formLicensePlate = "";
+        formDeptId = 0;
+        formBrand = "";
+        formModel = "";
+        formColor = "";
+        formYear = null;
+        formStatus = VehicleStatus.Active;
+        formRemarks = "";
+        showForm = true;
+    }
+
+    private void Edit(Vehicle v)
+    {
+        editId = v.Id;
+        formLicensePlate = v.LicensePlate;
+        formDeptId = v.DepartmentId;
+        formBrand = v.Brand ?? "";
+        formModel = v.Model ?? "";
+        formColor = v.Color ?? "";
+        formYear = v.Year;
+        formStatus = v.Status;
+        formRemarks = v.Remarks ?? "";
+        showForm = true;
+    }
+
+    private void CancelForm() => showForm = false;
+
+    /// <summary>
+    /// 保存车辆（新增/编辑），委托给 VehicleService
+    /// </summary>
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(formLicensePlate) || formDeptId == 0) return;
+
+        try
+        {
+            if (editId == 0)
+            {
+                var vehicle = new Vehicle
+                {
+                    DepartmentId = formDeptId,
+                    LicensePlate = formLicensePlate.Trim(),
+                    Brand = formBrand?.Trim(),
+                    Model = formModel?.Trim(),
+                    Year = formYear,
+                    Color = formColor?.Trim(),
+                    Status = formStatus,
+                    QrCodeToken = QrCodeService.GenerateNewToken(),
+                    Remarks = formRemarks?.Trim(),
+                    CreatedAt = ChinaTime.Now
+                };
+                await VehicleService.CreateVehicleAsync(vehicle);
+            }
+            else
+            {
+                var v = await VehicleService.GetVehicleByIdAsync(editId);
+                if (v != null)
+                {
+                    v.DepartmentId = formDeptId;
+                    v.LicensePlate = formLicensePlate.Trim();
+                    v.Brand = formBrand?.Trim();
+                    v.Model = formModel?.Trim();
+                    v.Year = formYear;
+                    v.Color = formColor?.Trim();
+                    v.Status = formStatus;
+                    v.Remarks = formRemarks?.Trim();
+                    await VehicleService.UpdateVehicleAsync(v);
+                }
+            }
+
+            showForm = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"保存失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 下载车辆二维码（校验委托给 VehicleService）
+    /// </summary>
+    private async Task DownloadQrCode(Vehicle v)
+    {
+        // 校验是否可以下载
+        var (canDownload, errorMsg) = await VehicleService.ValidateQrCodeDownloadAsync(v);
+        if (!canDownload)
+        {
+            errorMessage = errorMsg;
+            return;
+        }
+
+        // 确保 Token 存在
+        await VehicleService.EnsureQrCodeTokenAsync(v, QrCodeService);
+
+        // 从当前 HTTP 请求自动获取外部访问的 Scheme + Host（浏览器 Host 头包含实际 IP:端口）
+        var request = HttpContextAccessor.HttpContext.Request;
+        var baseUrl = $"{request.Scheme}://{request.Host}";
+
+        var url = QrCodeService.GenerateVehicleQrCodeUrl(v.QrCodeToken, baseUrl);
+        var base64 = QrCodeService.GenerateQrCodeBase64(url);
+        var fileName = $"QR_{v.LicensePlate}.png";
+
+        await JS.InvokeVoidAsync("downloadBase64Image", base64, fileName);
+    }
+
+    private void ShowDeleteConfirm(int id, string name)
+    {
+        deletingVehicleId = id;
+        deletingVehicleName = name;
+        showDeleteConfirm = true;
+    }
+
+    private void CloseDeleteConfirm()
+    {
+        showDeleteConfirm = false;
+        deletingVehicleId = 0;
+        deletingVehicleName = "";
+    }
+
+    private void CloseError()
+    {
+        errorMessage = null;
+    }
+
+    /// <summary>
+    /// 确认删除车辆，委托给 VehicleService（含业务校验）
+    /// </summary>
+    private async Task ConfirmDelete()
+    {
+        showDeleteConfirm = false;
+        errorMessage = null;
+
+        var (success, errorMsg) = await VehicleService.DeleteVehicleAsync(deletingVehicleId);
+        if (!success)
+        {
+            errorMessage = errorMsg;
+            return;
+        }
+
+        await LoadData();
+    }
+
+    private async Task ExportExcel(Vehicle v)
+    {
+        try
+        {
+            var bytes = await ExportService.ExportAsync(v.Id);
+            if (bytes == null) { errorMessage = "导出失败：未找到该车辆数据。"; return; }
+            var base64 = Convert.ToBase64String(bytes);
+            var fileName = $"{v.LicensePlate}_导出_{ChinaTime.Now:yyyyMMddHHmm}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", base64, fileName, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex) { errorMessage = $"导出失败：{ex.Message}"; }
+    }
+}

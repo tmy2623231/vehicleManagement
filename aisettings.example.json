@@ -1,0 +1,6 @@
+{
+  "AiServer": {
+    "OllamaEndpoint": "http://localhost:11434",
+    "OllamaModel": "gemma4:e2b"
+  }
+}

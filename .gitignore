@@ -1,0 +1,20 @@
+# 构建产物
+bin/
+obj/
+*.user
+
+# 运行时数据（数据库、日志、上传附件）——不入库
+data/
+logs/
+Folder/
+wwwroot/uploads/
+
+# 本地真实配置：克隆仓库后复制 aisettings.example.json 为 aisettings.json 再改
+aisettings.json
+
+# IDE / 系统
+.vs/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
