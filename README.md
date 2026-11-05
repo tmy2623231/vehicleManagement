@@ -373,7 +373,7 @@ vehicleManagement/
 
 <div align="center">
 
-**主仓库（自建 Gitea）**：<https://gitea.tianmaoyi.cn:4443/maoyi/vehicleManagement> ｜ **简历**：<https://gitea.tianmaoyi.cn:4443/maoyi/tianmaoyi-resume>
+**GitHub**：<https://github.com/tmy2623231/vehicleManagement> ｜ **主仓库（自建 Gitea）**：<https://gitea.tianmaoyi.cn:4443/maoyi/vehicleManagement> ｜ **简历**：<https://gitea.tianmaoyi.cn:4443/maoyi/tianmaoyi-resume>
 
 个人自研项目，代码用于技术展示，未附带开源许可证（All rights reserved）· 数据、日志与上传附件均不入库
 
