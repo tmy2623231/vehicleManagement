@@ -17,6 +17,7 @@
 [![Serilog](https://img.shields.io/badge/Log-Serilog-ffffff?borderColor=cccccc)](#稳定性与兜底)
 [![Docker](https://img.shields.io/badge/Deploy-多阶段_Docker-2496ED?logo=docker&logoColor=white)](#配置与部署)
 [![Gitea](https://img.shields.io/badge/Mirror-Gitea_主仓库-609926?logo=gitea&logoColor=white)](https://gitea.tianmaoyi.cn:4443/maoyi/vehicleManagement)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
 
@@ -375,6 +376,6 @@ vehicleManagement/
 
 **GitHub**：<https://github.com/tmy2623231/vehicleManagement> ｜ **主仓库（自建 Gitea）**：<https://gitea.tianmaoyi.cn:4443/maoyi/vehicleManagement> ｜ **简历**：<https://gitea.tianmaoyi.cn:4443/maoyi/tianmaoyi-resume>
 
-个人自研项目，代码用于技术展示，未附带开源许可证（All rights reserved）· 数据、日志与上传附件均不入库
+MIT License © 2026 田茂屹 ｜ 数据、日志与上传附件均不入库（见 `.gitignore`）
 
 </div>

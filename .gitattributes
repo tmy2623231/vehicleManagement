@@ -1,0 +1,16 @@
+# 行尾归一化：仓库内统一存 LF，正确性不依赖各机器的 core.autocrlf
+* text=auto
+
+# Linux 容器构建与脚本必须是 LF
+Dockerfile text eol=lf
+*.sh       text eol=lf
+
+# 二进制资源不做换行转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.mp4  binary
+*.ttf  binary
+*.ico  binary
+*.db   binary
