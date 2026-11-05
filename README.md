@@ -16,7 +16,6 @@
 [![Ollama](https://img.shields.io/badge/Inference-Ollama_本地推理-000000?logo=ollama&logoColor=white)](#快速开始)
 [![Serilog](https://img.shields.io/badge/Log-Serilog-ffffff?borderColor=cccccc)](#稳定性与兜底)
 [![Docker](https://img.shields.io/badge/Deploy-多阶段_Docker-2496ED?logo=docker&logoColor=white)](#配置与部署)
-[![Gitea](https://img.shields.io/badge/Mirror-Gitea_主仓库-609926?logo=gitea&logoColor=white)](https://gitea.tianmaoyi.cn:4443/maoyi/vehicleManagement)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
@@ -374,7 +373,7 @@ vehicleManagement/
 
 <div align="center">
 
-**GitHub**：<https://github.com/tmy2623231/vehicleManagement> ｜ **主仓库（自建 Gitea）**：<https://gitea.tianmaoyi.cn:4443/maoyi/vehicleManagement> ｜ **简历**：<https://gitea.tianmaoyi.cn:4443/maoyi/tianmaoyi-resume>
+**GitHub**：<https://github.com/tmy2623231/vehicleManagement>
 
 MIT License © 2026 田茂屹 ｜ 数据、日志与上传附件均不入库（见 `.gitignore`）
 
