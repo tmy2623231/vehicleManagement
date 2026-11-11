@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using vehicleManagement.DAL.Common;
 
 namespace vehicleManagement.DAL.Model
@@ -37,5 +38,9 @@ namespace vehicleManagement.DAL.Model
         public bool IsActive { get; set; } = true;
 
         public DateTime CreatedAt { get; set; } = ChinaTime.Now;
+
+        /// <summary>所属部门导航（列已存在，仅查询用，不改 DDL）。</summary>
+        [ForeignKey("DepartmentId")]
+        public Department? Department { get; set; }
     }
 }

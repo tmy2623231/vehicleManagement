@@ -1,0 +1,564 @@
+@page "/accounts"
+@attribute [Authorize(Roles = vehicleManagement.DAL.Model.Roles.Admin)]
+@inject AccountService AccountSvc
+@inject ICurrentUser CurrentUser
+@using DepartmentEntity = vehicleManagement.DAL.Model.Department
+
+<div class="flex justify-between items-center mb-5">
+    <div>
+        <h2 class="text-xl font-bold text-dark">账号管理</h2>
+        <p class="text-sm text-gray mt-1">后台账号（全局管理员 / 部门管理员）的开通与维护；普通使用人员账号请到「人员管理」维护</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <input class="input-field" type="text" style="width:240px" placeholder="搜索用户名/显示名..."
+               value="@searchKeyword" @oninput="OnSearchInput" />
+        <button class="btn btn-primary" @onclick="() => OpenCreate(Roles.DeptAdmin)">+ 新增部门管理员</button>
+        <button class="btn btn-secondary" @onclick="() => OpenCreate(Roles.Admin)">+ 新增全局管理员</button>
+    </div>
+</div>
+
+<!-- 新增后台账号弹框 -->
+@if (showCreateForm)
+{
+    <div class="modal-overlay show" @onclick="CloseCreateForm">
+        <div class="modal" style="max-width:480px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">@(createRole == Roles.Admin ? "新增全局管理员" : "新增部门管理员")</div>
+                <button class="modal-close" @onclick="CloseCreateForm">✕</button>
+            </div>
+            <div>
+                <div class="mb-4">
+                    <label class="input-label">角色</label>
+                    <input class="input-field" type="text" readonly value="@RoleText(createRole)" />
+                    <p class="text-sm text-gray mt-1">
+                        @(createRole == Roles.Admin
+                            ? "全局管理员拥有全量视野（不限部门）。"
+                            : "部门管理员的数据可见范围为所选部门。")
+                    </p>
+                </div>
+                @if (createRole == Roles.DeptAdmin)
+                {
+                    <div class="mb-4">
+                        <label class="input-label">所属部门</label>
+                        <select class="input-field" @bind="createDeptId">
+                            <option value="0">-- 请选择 --</option>
+                            @foreach (var d in departments)
+                            {
+                                <option value="@d.Id">@d.Name</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="mb-4">
+                    <label class="input-label">登录用户名</label>
+                    <input class="input-field" type="text" placeholder="小写字母开头，字母或数字 3-20 位"
+                           @bind="createUserName" @bind:event="oninput" />
+                    <p class="text-sm text-gray mt-1">用户名创建后不可修改。</p>
+                </div>
+                <div class="grid grid-2 mb-4">
+                    <div>
+                        <label class="input-label">显示名（可选）</label>
+                        <input class="input-field" type="text" placeholder="如：信息网络通信室管理员"
+                               @bind="createDisplayName" @bind:event="oninput" />
+                    </div>
+                    <div>
+                        <label class="input-label">初始密码</label>
+                        <input class="input-field" type="text" placeholder="至少 6 位"
+                               @bind="createPassword" @bind:event="oninput" />
+                    </div>
+                </div>
+                @if (!string.IsNullOrEmpty(createError))
+                {
+                    <p class="text-sm" style="color:var(--red-600);">@createError</p>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseCreateForm">取消</button>
+                <button class="btn btn-primary" @onclick="SaveCreate" disabled="@saving">
+                    @(saving ? "提交中..." : "确定")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 编辑后台账号弹框 -->
+@if (showEditForm)
+{
+    <div class="modal-overlay show" @onclick="CloseEditForm">
+        <div class="modal" style="max-width:480px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">编辑账号</div>
+                <button class="modal-close" @onclick="CloseEditForm">✕</button>
+            </div>
+            <div>
+                <div class="mb-4">
+                    <label class="input-label">登录用户名</label>
+                    <input class="input-field" type="text" readonly value="@editUserName" />
+                    <p class="text-sm text-gray mt-1">
+                        用户名是登录凭据（统一小写、唯一），且被审计日志与登录记录引用，改名会与历史记录脱节，故不可修改；
+                        如需更换请停用后重新开通。
+                    </p>
+                </div>
+                <div class="mb-4">
+                    <label class="input-label">角色</label>
+                    <input class="input-field" type="text" readonly value="@RoleText(editRole)" />
+                </div>
+                @if (editRole == Roles.DeptAdmin)
+                {
+                    <div class="mb-4">
+                        <label class="input-label">所属部门</label>
+                        <select class="input-field" @bind="editDeptId">
+                            <option value="0">-- 请选择 --</option>
+                            @foreach (var d in departments)
+                            {
+                                <option value="@d.Id">@d.Name</option>
+                            }
+                        </select>
+                        <p class="text-sm text-gray mt-1">调整部门后，该账号需重新登录才会按新部门生效。</p>
+                    </div>
+                }
+                else
+                {
+                    <p class="text-sm text-gray mb-4">全局管理员不限部门（全量视野）。</p>
+                }
+                <div class="mb-4">
+                    <label class="input-label">显示名</label>
+                    <input class="input-field" type="text" placeholder="留空则不显示"
+                           @bind="editDisplayName" @bind:event="oninput" />
+                </div>
+                @if (!string.IsNullOrEmpty(editError))
+                {
+                    <p class="text-sm" style="color:var(--red-600);">@editError</p>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseEditForm">取消</button>
+                <button class="btn btn-primary" @onclick="SaveEdit" disabled="@saving">
+                    @(saving ? "提交中..." : "保存")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 重置密码弹框 -->
+@if (showResetForm)
+{
+    <div class="modal-overlay show" @onclick="CloseResetForm">
+        <div class="modal" style="max-width:460px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">重置密码</div>
+                <button class="modal-close" @onclick="CloseResetForm">✕</button>
+            </div>
+            <div>
+                <p class="text-sm text-gray mb-4">登录名：<strong class="text-dark">@resetUserName</strong>（@resetRoleText）</p>
+                <div>
+                    <label class="input-label">新密码</label>
+                    <input class="input-field" type="text" placeholder="至少 6 位"
+                           @bind="resetPassword" @bind:event="oninput" />
+                </div>
+                @if (!string.IsNullOrEmpty(resetError))
+                {
+                    <p class="text-sm mt-3" style="color:var(--red-600);">@resetError</p>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseResetForm">取消</button>
+                <button class="btn btn-primary" @onclick="SaveResetPassword" disabled="@saving">
+                    @(saving ? "提交中..." : "确定")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 启用/停用确认弹框 -->
+@if (showToggleConfirm)
+{
+    <div class="modal-overlay show" @onclick="CloseToggleConfirm">
+        <div class="modal" style="max-width:440px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">@(toggleToActive ? "确认启用" : "确认停用")</div>
+                <button class="modal-close" @onclick="CloseToggleConfirm">✕</button>
+            </div>
+            <p style="color:var(--gray-700);font-size:15px;line-height:1.6;">
+                确定要@(toggleToActive ? "启用" : "停用")账号 <strong class="text-dark">@toggleUserName</strong> 吗？<br/>
+                <span class="text-sm text-gray">
+                    @(toggleToActive
+                        ? "启用后该账号立即恢复登录能力；若口令已失效请先重置密码。"
+                        : "停用后该账号立即无法登录，历史审计日志保留。")
+                </span>
+            </p>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseToggleConfirm">取消</button>
+                <button class="@(toggleToActive ? "btn btn-primary" : "btn btn-danger")"
+                        @onclick="ConfirmToggleActive" disabled="@saving">
+                    @(saving ? "提交中..." : (toggleToActive ? "确认启用" : "确认停用"))
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 错误提示弹框 -->
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="modal-overlay show" @onclick="CloseError">
+        <div class="modal" style="max-width:420px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">操作失败</div>
+                <button class="modal-close" @onclick="CloseError">✕</button>
+            </div>
+            <p style="color:var(--red-600);font-size:15px;line-height:1.6;">@errorMessage</p>
+            <div class="modal-footer">
+                <button class="btn btn-primary" @onclick="CloseError">确定</button>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-title">后台账号列表</div>
+            <div class="card-subtitle">共 @totalCount 个账号</div>
+        </div>
+    </div>
+    <div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("username"))">
+                    用户名 @SortIndicator("username")
+                </th>
+                <th>显示名</th>
+                <th>角色</th>
+                <th>所属部门</th>
+                <th>状态</th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("created"))">
+                    创建时间 @SortIndicator("created")
+                </th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var u in accountList)
+            {
+                <tr>
+                    <td>@u.UserName</td>
+                    <td>@(u.DisplayName ?? "-")</td>
+                    <td>
+                        <span class="badge @RoleBadge(u.Role)">@RoleText(u.Role)</span>
+                    </td>
+                    <td>@(u.Department?.Name ?? "-")</td>
+                    <td>
+                        @if (u.IsActive)
+                        {
+                            <span class="badge badge-green">启用</span>
+                        }
+                        else
+                        {
+                            <span class="badge badge-gray">停用</span>
+                        }
+                    </td>
+                    <td>@u.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>
+                        <div class="flex gap-2">
+                            <button class="btn btn-sm btn-secondary" @onclick="() => ShowResetPassword(u)">重置密码</button>
+                            <button class="btn btn-sm btn-info" @onclick="() => ShowEdit(u)">编辑</button>
+                            @if (u.Id != currentUserId)
+                            {
+                                @if (u.IsActive)
+                                {
+                                    <button class="btn btn-sm btn-danger" @onclick="() => ShowToggleActive(u, false)">停用</button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => ShowToggleActive(u, true)">启用</button>
+                                }
+                            }
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<Pagination CurrentPage="currentPage" TotalPages="totalPages" TotalCount="totalCount" OnPageChanged="OnPageChanged" />
+
+@code {
+    // ===== 列表数据与分页/搜索/排序状态 =====
+    private List<AppUser> accountList = new();
+    private List<DepartmentEntity> departments = new();
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalCount = 0;
+    private int totalPages => totalCount > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 1;
+    private string searchKeyword = "";
+    private string sortColumn = "created";
+    private bool sortAscending = false;
+
+    // ===== 当前登录者（隐藏自己行上的停用/启用按钮） =====
+    private int currentUserId = 0;
+
+    // ===== 新增后台账号弹框状态 =====
+    private bool showCreateForm = false;
+    private string createRole = Roles.DeptAdmin;
+    private string createUserName = "";
+    private string createDisplayName = "";
+    private string createPassword = "";
+    private int createDeptId = 0;
+    private string createError = "";
+
+    // ===== 编辑后台账号弹框状态 =====
+    private bool showEditForm = false;
+    private int editUserId = 0;
+    private string editUserName = "";
+    private string editRole = "";
+    private string editDisplayName = "";
+    private int editDeptId = 0;
+    private string editError = "";
+
+    // ===== 重置密码弹框状态 =====
+    private bool showResetForm = false;
+    private int resetUserId = 0;
+    private string resetUserName = "";
+    private string resetRoleText = "";
+    private string resetPassword = "";
+    private string resetError = "";
+
+    // ===== 启用/停用确认弹框状态 =====
+    private bool showToggleConfirm = false;
+    private int toggleUserId = 0;
+    private string toggleUserName = "";
+    private bool toggleToActive = false;
+
+    private bool saving = false;
+    private string errorMessage = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var me = await CurrentUser.GetAsync();
+        currentUserId = me.UserId;
+        departments = await AccountSvc.GetDepartmentOptionsAsync();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var result = await AccountSvc.GetPagedAccountsAsync(searchKeyword, sortColumn, sortAscending, currentPage, pageSize);
+        accountList = result.Items;
+        totalCount = result.TotalCount;
+        currentPage = result.CurrentPage;
+    }
+
+    // ===== 新增后台账号 =====
+    private void OpenCreate(string role)
+    {
+        createRole = role;
+        createUserName = "";
+        createDisplayName = "";
+        createPassword = "";
+        createDeptId = 0;
+        createError = "";
+        showCreateForm = true;
+    }
+
+    private void CloseCreateForm()
+    {
+        showCreateForm = false;
+        createError = "";
+    }
+
+    private async Task SaveCreate()
+    {
+        createError = "";
+        saving = true;
+        try
+        {
+            var (success, errorMsg) = await AccountSvc.CreateBackOfficeAccountAsync(
+                createUserName, createPassword, createRole,
+                createRole == Roles.DeptAdmin ? createDeptId : null,
+                createDisplayName);
+
+            if (!success)
+            {
+                createError = errorMsg;
+                return;
+            }
+
+            showCreateForm = false;
+            await LoadData();
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    // ===== 编辑后台账号 =====
+    private void ShowEdit(AppUser u)
+    {
+        editUserId = u.Id;
+        editUserName = u.UserName;
+        editRole = u.Role;
+        editDisplayName = u.DisplayName ?? "";
+        editDeptId = u.DepartmentId ?? 0;
+        editError = "";
+        showEditForm = true;
+    }
+
+    private void CloseEditForm()
+    {
+        showEditForm = false;
+        editError = "";
+    }
+
+    private async Task SaveEdit()
+    {
+        editError = "";
+        saving = true;
+        try
+        {
+            var (success, errorMsg) = await AccountSvc.UpdateBackOfficeAccountAsync(
+                editUserId, editDisplayName,
+                editRole == Roles.DeptAdmin ? editDeptId : null);
+
+            if (!success)
+            {
+                editError = errorMsg;
+                return;
+            }
+
+            showEditForm = false;
+            await LoadData();
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    // ===== 重置密码 =====
+    private void ShowResetPassword(AppUser u)
+    {
+        resetUserId = u.Id;
+        resetUserName = u.UserName;
+        resetRoleText = RoleText(u.Role);
+        resetPassword = "";
+        resetError = "";
+        showResetForm = true;
+    }
+
+    private void CloseResetForm()
+    {
+        showResetForm = false;
+        resetError = "";
+    }
+
+    private async Task SaveResetPassword()
+    {
+        resetError = "";
+        saving = true;
+        try
+        {
+            var (success, errorMsg) = await AccountSvc.ResetPasswordAsync(resetUserId, resetPassword);
+            if (!success)
+            {
+                resetError = errorMsg;
+                return;
+            }
+
+            showResetForm = false;
+            await LoadData();
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    // ===== 启用/停用 =====
+    private void ShowToggleActive(AppUser u, bool toActive)
+    {
+        toggleUserId = u.Id;
+        toggleUserName = u.UserName;
+        toggleToActive = toActive;
+        showToggleConfirm = true;
+    }
+
+    private void CloseToggleConfirm()
+    {
+        showToggleConfirm = false;
+        toggleUserId = 0;
+    }
+
+    private async Task ConfirmToggleActive()
+    {
+        saving = true;
+        try
+        {
+            var (ok, err) = await AccountSvc.SetActiveAsync(toggleUserId, toggleToActive);
+            if (!ok) { errorMessage = err; }
+            CloseToggleConfirm();
+            if (ok) await LoadData();
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    // ===== 搜索/排序/分页 =====
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchKeyword = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private void ToggleSort(string column)
+    {
+        if (sortColumn == column)
+            sortAscending = !sortAscending;
+        else
+        {
+            sortColumn = column;
+            sortAscending = true;
+        }
+        // 有意 fire-and-forget：ToggleSort 是同步 void，改 Task 只会把异常升级成断电路
+        _ = LoadData();
+    }
+
+    private string SortIndicator(string column)
+    {
+        if (sortColumn != column) return "";
+        return sortAscending ? "▲" : "▼";
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        await LoadData();
+    }
+
+    private void CloseError() => errorMessage = null;
+
+    // ===== 角色展示 =====
+    private static string RoleText(string role) => role switch
+    {
+        Roles.Admin => "全局管理员",
+        Roles.DeptAdmin => "部门管理员",
+        _ => "使用人员"
+    };
+
+    private static string RoleBadge(string role) => role switch
+    {
+        Roles.Admin => "badge-purple",
+        Roles.DeptAdmin => "badge-blue",
+        _ => "badge-green"
+    };
+}

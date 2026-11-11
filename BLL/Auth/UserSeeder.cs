@@ -10,7 +10,10 @@ using vehicleManagement.DAL.Model;
 
 namespace vehicleManagement.BLL.Auth
 {
-    /// <summary>账号初始化种子（幂等、只 INSERT 不 UPDATE）：admin → 部门管理员 → 在职人员按拼音建号。</summary>
+    /// <summary>
+    /// 账号初始化种子（幂等、只 INSERT 不 UPDATE）：admin → 部门管理员 → 在职人员按拼音建号。
+    /// 仅作为首次部署的引导；后续新增部门/同级管理员一律走「账号管理」页（/accounts），不再靠改代码或重启。
+    /// </summary>
     public static class UserSeeder
     {
         private const string AdminUserName = "admin";
@@ -21,7 +24,9 @@ namespace vehicleManagement.BLL.Auth
         private const int MaxUserNameLength = 20;
 
         /// <summary>
-        /// 部门管理员固定映射。<b>按部门名精确匹配，绝不硬编码 Id</b> —— 生产库是 3/6/7，开发库可能不同。
+        /// 部门管理员固定映射，仅用于首次部署引导。
+        /// <b>按部门名精确匹配，绝不硬编码 Id</b> —— 生产库是 3/6/7，开发库可能不同。
+        /// 新增部门请到「账号管理」页开通，不要往这里加硬编码。
         /// </summary>
         private static readonly Dictionary<string, string> DeptAdminMap = new()
         {

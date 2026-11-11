@@ -462,33 +462,59 @@ input[type="checkbox"] {
     .exec-card { margin: 16px 20px; }
 }
 
-/* 侧边栏底部：当前用户 + 退出登录（P1.5 U7） */
+/* 侧边栏底部：当前用户 + 退出登录（P1.5 U7）
+   单行左用户右退出：align-items 保证两者垂直居中对齐；
+   左右 padding 与 .sidebar-brand(24px)、.nav-item(12+12=24px) 的缩进保持一致。 */
 .sidebar-user {
     margin-top: auto;
-    padding: 14px 20px 18px;
+    flex-shrink: 0;
+    padding: 12px 24px;
     border-top: 1px solid var(--gray-200);
     display: flex;
-    flex-direction: column;
-    gap: 6px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
 }
 
+/* flex 子项必须允许收缩（min-width: 0），否则长用户名不会省略而是撑破容器 */
 .sidebar-user .sidebar-user-name {
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: 13px;
     font-weight: 600;
-    color: var(--gray-900);
+    line-height: 1.4;
+    color: var(--gray-800);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
+/* 退出登录：不参与收缩，热区撑到 44px 但用负边距抵消视觉缩进 */
 .sidebar-user .sidebar-logout {
+    flex-shrink: 0;
+    margin-left: auto;
+    margin-right: -4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 4px;
     font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
     color: var(--gray-500);
     text-decoration: none;
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
 }
 
 .sidebar-user .sidebar-logout:hover {
     color: var(--primary-600);
+}
+
+.sidebar-user .sidebar-logout:focus-visible {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 2px;
 }
 
 /* 移动端顶栏（扫码页/扫码提示页）：当前用户 + 退出登录 */
@@ -516,13 +542,16 @@ input[type="checkbox"] {
     text-decoration: none;
 }
 
-/* 退出登录触发按钮：沿用链接外观，但要清掉 button 默认样式 */
+/* 退出登录触发按钮：沿用链接外观，但要清掉 button 默认样式
+   （桌面侧边栏 .sidebar-logout 与移动顶栏 .mobile-topbar-logout 共用） */
 .logout-trigger {
     background: none;
     border: 0;
     padding: 0;
     font: inherit;
     cursor: pointer;
+    text-align: inherit;
+    letter-spacing: inherit;
 }
 
 /* 退出登录确认弹框（渲染在布局根节点，避免被侧边栏 transform 裁剪） */
