@@ -9,6 +9,13 @@ logs/
 Folder/
 wwwroot/uploads/
 
+# 数据库文件与备份快照——含真实业务数据，绝不入库
+backups/
+*.db
+*.db-shm
+*.db-wal
+*.db.old
+
 # 本地真实配置：克隆仓库后复制 aisettings.example.json 为 aisettings.json 再改
 aisettings.json
 
