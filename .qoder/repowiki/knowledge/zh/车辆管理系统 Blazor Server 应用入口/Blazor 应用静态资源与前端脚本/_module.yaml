@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: static_assets
+title: Blazor 应用静态资源与前端脚本
+scope:
+    - wwwroot/
+source_files: []
+depends_on: []
+related_to:
+    - path: ai_chat_subsystem
+    - path: vehicle_management_app

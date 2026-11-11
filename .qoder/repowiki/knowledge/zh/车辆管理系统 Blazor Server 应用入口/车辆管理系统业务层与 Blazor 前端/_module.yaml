@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: vehicle_management_app
+title: 车辆管理系统业务层与 Blazor 前端
+scope:
+    - BLL/
+    - DAL/
+    - Pages/
+    - Components/
+source_files: []
+depends_on: []
+related_to:
+    - path: ai_chat_subsystem
+    - path: static_assets

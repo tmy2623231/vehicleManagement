@@ -1,0 +1,69 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: main
+nodes_managed: true
+exported_at: "2026-11-11T03:52:34Z"
+modules:
+    "":
+        dir_name: 车辆管理系统 Blazor Server 应用入口
+        title: 车辆管理系统 Blazor Server 应用入口
+        scope:
+            - README.md
+            - .gitignore
+            - .dockerignore
+            - .gitattributes
+            - App.razor
+            - _Imports.razor
+            - Program.cs
+            - vehicleManagement.csproj
+            - vehicleManagement.slnx
+            - appsettings.json
+            - appsettings.Development.json
+            - aisettings.example.json
+            - Dockerfile
+            - Properties/
+            - LICENSE
+        source_files: []
+        children:
+            - ai_chat_subsystem
+            - static_assets
+            - vehicle_management_app
+        depends_on: []
+        related_to: []
+    ai_chat_subsystem:
+        dir_name: AI 车辆管理对话子系统
+        title: AI 车辆管理对话子系统
+        scope:
+            - aiServer/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: static_assets
+            - path: vehicle_management_app
+    static_assets:
+        dir_name: Blazor 应用静态资源与前端脚本
+        title: Blazor 应用静态资源与前端脚本
+        scope:
+            - wwwroot/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: ai_chat_subsystem
+            - path: vehicle_management_app
+    vehicle_management_app:
+        dir_name: 车辆管理系统业务层与 Blazor 前端
+        title: 车辆管理系统业务层与 Blazor 前端
+        scope:
+            - BLL/
+            - DAL/
+            - Pages/
+            - Components/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: ai_chat_subsystem
+            - path: static_assets
