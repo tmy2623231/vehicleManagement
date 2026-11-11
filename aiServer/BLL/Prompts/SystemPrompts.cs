@@ -34,5 +34,28 @@ namespace vehicleManagement.aiServer.BLL.Prompts
         {
             return "以下是车辆管理系统的【真实数据库查询结果】，你必须严格基于这些数据回答用户问题。如果查询结果为空或没有匹配数据，请如实告知用户。不要编造任何不存在的信息。\n\n" + dataContext;
         }
+
+        /// <summary>
+        /// Text-to-SQL 副路径的系统提示：只允许在给定表白名单内生成一条只读 SQL。
+        /// 真正的安全边界在 TextToSqlValidator（白名单 / 单条 SELECT / 强制 LIMIT），提示词只是第一道引导。
+        /// </summary>
+        public static string BuildTextToSqlPrompt(string schemaWhitelist)
+        {
+            return (@"你是车辆管理系统内置的 SQLite 查询生成器。根据用户问题生成一条只读查询语句。
+
+## 可用表与列（只能使用下列表名与列名，不得臆造）
+" + schemaWhitelist + @"
+
+## 硬性要求
+1. 只输出一条 SELECT 语句（可以使用 WITH 子查询），不要输出任何解释文字。
+2. 不要使用 Markdown 代码块包裹，不要写注释，不要写分号。
+3. 只能引用上面列出的表和列；不要查询任何账号或审计相关表。
+4. 必须带 LIMIT，且不超过 200。
+5. 时间列是文本格式 'yyyy-MM-dd HH:mm:ss'，按月聚合用 strftime('%Y-%m', CreatedAt)。
+6. 车辆状态 Status：1=在用，2=维修，3=退役；使用记录的 IsBorrow：1=借车，0=同部门使用。
+7. 若问题与车辆管理数据无关，直接输出 SELECT 1 AS no_data
+8. 结果涉及具体车辆时必须 JOIN Vehicles 输出 LicensePlate（可同时输出 Brand / Model）；不要把 Id 当车牌号返回。
+9. 列别名用英文 snake_case，便于下游直接展示。").Trim();
+        }
     }
 }

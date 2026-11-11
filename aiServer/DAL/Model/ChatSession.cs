@@ -18,7 +18,7 @@ namespace vehicleManagement.aiServer.DAL.Model
         /// 会话标题（可自动根据首条消息生成）
         /// </summary>
         [MaxLength(200)]
-        public string Title { get; set; }
+        public string? Title { get; set; }   // 可空：库列为 TEXT NULL
 
         /// <summary>
         /// 创建时间

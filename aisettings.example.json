@@ -1,6 +1,13 @@
 {
   "AiServer": {
-    "OllamaEndpoint": "http://localhost:11434",
-    "OllamaModel": "gemma4:e2b"
+    "Provider": "OpenAI",
+    "BaseUrl": "https://your-gateway/v1",
+    "ApiKey": "sk-REPLACE_WITH_YOUR_KEY",
+    "ModelId": "gpt-4o-mini",
+    "ChatCompletionPath": "/chat/completions",
+    "TimeoutSeconds": 60,
+    "MaxTokens": null,
+    "Temperature": null,
+    "TextToSqlEnabled": false
   }
 }

@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using vehicleManagement.aiServer.DAL.Model;
+using vehicleManagement.DAL.Common;
 
 namespace vehicleManagement.aiServer.DAL.Repository
 {
@@ -22,10 +23,12 @@ namespace vehicleManagement.aiServer.DAL.Repository
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
             return await ((IQueryable<ChatSession>)db.ChatSessions)
+                .AsNoTracking()
                 .OrderByDescending(s => s.UpdatedAt)
                 .ToListAsync();
         }
 
+        // 不加 AsNoTracking：调用方会「读-改-写」，脱跟踪后 SetValues 找不到原实体
         public async Task<ChatSession> GetByIdAsync(int id)
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
@@ -40,13 +43,15 @@ namespace vehicleManagement.aiServer.DAL.Repository
             return session;
         }
 
-        public async Task<ChatSession> UpdateAsync(ChatSession session)
+        public async Task<ChatSession> UpdateAsync(ChatSession patch)
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
-            session.UpdatedAt = System.DateTime.Now;
-            db.ChatSessions.Update(session);
+            var existing = await db.ChatSessions.FindAsync(patch.Id);
+            if (existing is null) return patch;      // 保持现有「不抛异常」返回契约
+            patch.UpdatedAt = ChinaTime.Now;
+            db.Entry(existing).CurrentValues.SetValues(patch);   // 只覆盖标量列，导航集合（Messages）一律不动
             await db.SaveChangesAsync();
-            return session;
+            return existing;
         }
 
         public async Task<bool> DeleteAsync(int id)

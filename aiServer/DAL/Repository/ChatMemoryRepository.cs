@@ -22,7 +22,9 @@ namespace vehicleManagement.aiServer.DAL.Repository
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
             return await ((IQueryable<ChatMemory>)db.ChatMemories)
+                .AsNoTracking()
                 .OrderByDescending(m => m.CreatedAt)
+                .ThenByDescending(m => m.Id)
                 .ToListAsync();
         }
 
@@ -35,7 +37,9 @@ namespace vehicleManagement.aiServer.DAL.Repository
             await using var db = await _dbFactory.CreateDbContextAsync();
             return await ((IQueryable<ChatMemory>)db.ChatMemories)
                 .Where(m => m.Key.Contains(kw) || m.Content.Contains(kw))
+                .AsNoTracking()
                 .OrderByDescending(m => m.CreatedAt)
+                .ThenByDescending(m => m.Id)
                 .Take(5)
                 .ToListAsync();
         }
@@ -48,18 +52,22 @@ namespace vehicleManagement.aiServer.DAL.Repository
             return memory;
         }
 
-        public async Task<ChatMemory> UpdateAsync(ChatMemory memory)
+        public async Task<ChatMemory> UpdateAsync(ChatMemory patch)
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
-            db.ChatMemories.Update(memory);
+            var existing = await db.ChatMemories.FindAsync(patch.Id);
+            if (existing is null) return patch;      // 保持现有「不抛异常」返回契约
+            db.Entry(existing).CurrentValues.SetValues(patch);
             await db.SaveChangesAsync();
-            return memory;
+            return existing;
         }
 
+        // 返回脱跟踪快照；写入走 UpdateAsync 内部的 FindAsync，因此此处可安全加 AsNoTracking
         public async Task<ChatMemory> GetByKeyAsync(string key)
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
             return await ((IQueryable<ChatMemory>)db.ChatMemories)
+                .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.Key == key);
         }
 

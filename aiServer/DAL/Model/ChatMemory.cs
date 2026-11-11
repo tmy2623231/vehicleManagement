@@ -30,7 +30,7 @@ namespace vehicleManagement.aiServer.DAL.Model
         /// 记忆分类：vehicle / personnel / department / location / preference / general
         /// </summary>
         [MaxLength(50)]
-        public string Category { get; set; }
+        public string? Category { get; set; }   // 可空：库列为 TEXT NULL
 
         /// <summary>
         /// 来源会话ID（可选）

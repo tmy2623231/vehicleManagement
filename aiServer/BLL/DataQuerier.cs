@@ -284,7 +284,6 @@ namespace vehicleManagement.aiServer.BLL
             if (monthDigitMatch.Success && int.TryParse(monthDigitMatch.Groups[1].Value, out var m))
                 return m * 30;
 
-            // ── 常见中文时间表达 ──
             // 天
             if (kw.Contains("今天") || kw.Contains("今日")) return 1;
             if (kw.Contains("昨天") || kw.Contains("昨日")) return 1;

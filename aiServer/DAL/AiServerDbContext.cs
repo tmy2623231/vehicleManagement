@@ -17,6 +17,9 @@ namespace vehicleManagement.aiServer.DAL
         public DbSet<ChatMessage> ChatMessages { get; set; }
         public DbSet<ChatMemory> ChatMemories { get; set; }
 
+        /// <summary>时间列默认值按中国时间（SQLite 的 CURRENT_TIMESTAMP 是 UTC）。</summary>
+        private const string ChinaNowSql = "datetime('now','+8 hours')";
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -24,8 +27,8 @@ namespace vehicleManagement.aiServer.DAL
             // ChatSession 配置
             modelBuilder.Entity<ChatSession>(entity =>
             {
-                entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
-                entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql(ChinaNowSql);
+                entity.Property(e => e.UpdatedAt).HasDefaultValueSql(ChinaNowSql);
             });
 
             // ChatMessage 配置
@@ -33,7 +36,7 @@ namespace vehicleManagement.aiServer.DAL
             {
                 entity.HasIndex(e => e.SessionId);
                 entity.HasIndex(e => e.CreatedAt);
-                entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql(ChinaNowSql);
 
                 entity.HasOne(e => e.Session)
                       .WithMany(s => s.Messages)
@@ -46,7 +49,7 @@ namespace vehicleManagement.aiServer.DAL
             {
                 entity.HasIndex(e => e.Key);
                 entity.HasIndex(e => e.Category);
-                entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql(ChinaNowSql);
 
                 entity.HasOne(e => e.Session)
                       .WithMany()

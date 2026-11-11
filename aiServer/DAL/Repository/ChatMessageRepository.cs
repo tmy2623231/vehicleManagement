@@ -24,6 +24,8 @@ namespace vehicleManagement.aiServer.DAL.Repository
             return await ((IQueryable<ChatMessage>)db.ChatMessages)
                 .Where(m => m.SessionId == sessionId)
                 .OrderBy(m => m.CreatedAt)
+                .ThenBy(m => m.Id)
+                .AsNoTracking()
                 .ToListAsync();
         }
 
@@ -33,8 +35,11 @@ namespace vehicleManagement.aiServer.DAL.Repository
             return await ((IQueryable<ChatMessage>)db.ChatMessages)
                 .Where(m => m.SessionId == sessionId)
                 .OrderByDescending(m => m.CreatedAt)
+                .ThenByDescending(m => m.Id)
                 .Take(count)
                 .OrderBy(m => m.CreatedAt)  // 最终按时间升序返回
+                .ThenBy(m => m.Id)
+                .AsNoTracking()
                 .ToListAsync();
         }
 

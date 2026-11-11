@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using vehicleManagement.aiServer.DAL.Model;
 using vehicleManagement.aiServer.DAL.Repository;
+using vehicleManagement.DAL.Common;
 
 namespace vehicleManagement.aiServer.BLL
 {
@@ -77,14 +78,14 @@ namespace vehicleManagement.aiServer.BLL
                         var len = Math.Min(userMessage.Length - start, 100);
                         var snippet = userMessage.Substring(start, len);
 
-                        var memoryKey = $"preference_{DateTime.Now.Ticks}";
+                        var memoryKey = $"preference_{ChinaTime.Now.Ticks}";
                         await _memoryRepo.AddAsync(new ChatMemory
                         {
                             Key = memoryKey,
                             Content = snippet.Trim(),
                             Category = "preference",
                             SessionId = sessionId,
-                            CreatedAt = DateTime.Now
+                            CreatedAt = ChinaTime.Now
                         });
                     }
                 }
@@ -95,14 +96,14 @@ namespace vehicleManagement.aiServer.BLL
                     && !VehicleBrands.Any(b => userMessage.Contains(b))
                     && !PreferenceKeywords.Any(k => userMessage.Contains(k)))
                 {
-                    var memoryKey = $"general_{DateTime.Now.Ticks}";
+                    var memoryKey = $"general_{ChinaTime.Now.Ticks}";
                     await _memoryRepo.AddAsync(new ChatMemory
                     {
                         Key = memoryKey,
                         Content = userMessage.Trim(),
                         Category = "general",
                         SessionId = sessionId,
-                        CreatedAt = DateTime.Now
+                        CreatedAt = ChinaTime.Now
                     });
                 }
             }
@@ -188,7 +189,7 @@ namespace vehicleManagement.aiServer.BLL
                     Content = content,
                     Category = category,
                     SessionId = sessionId,
-                    CreatedAt = DateTime.Now
+                    CreatedAt = ChinaTime.Now
                 });
             }
         }

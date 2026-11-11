@@ -1,9 +1,11 @@
 @page "/ai-chat"
+@attribute [Authorize(Roles = vehicleManagement.DAL.Model.Roles.Admin)]
 @using vehicleManagement.aiServer.BLL
 @using vehicleManagement.aiServer.DAL.Model
 @using System.Text.Json
 @inject ChatService ChatService
 @inject IJSRuntime JS
+@inject ILogger<AiChat> Logger
 @implements IDisposable
 
 @* ===== 移动端侧边栏遮罩 ===== *@
@@ -280,7 +282,8 @@
     {
         if (firstRender)
         {
-            try { isMobile = await JS.InvokeAsync<bool>("eval", "window.innerWidth <= 640"); } catch { }
+            try { isMobile = await JS.InvokeAsync<bool>("eval", "window.innerWidth <= 640"); }
+            catch (Exception ex) { Logger.LogDebug(ex, "读取窗口宽度失败"); }
 
             // 注册全局滚动监听函数（仅一次）
             await JS.InvokeVoidAsync("eval", @"
@@ -386,7 +389,7 @@ window._aimInitScroll = function(dotnetRef) {
             SessionId = currentSessionId,
             Role = "user",
             Content = input,
-            CreatedAt = DateTime.Now
+            CreatedAt = ChinaTime.Now
         };
         messages.Add(userMessage);
         
@@ -401,11 +404,13 @@ window._aimInitScroll = function(dotnetRef) {
         }
         catch (Exception ex)
         {
+            // 只给中文兜底文案，ex.Message 含表名/端口等内部细节
+            Logger.LogError(ex, "发送消息失败 SessionId={SessionId}", currentSessionId);
             messages.Add(new ChatMessage
             {
                 Role = "assistant",
-                Content = $"发生错误：{ex.Message}",
-                CreatedAt = DateTime.Now
+                Content = "AI 服务暂时不可用，请稍后重试或联系管理员。",
+                CreatedAt = ChinaTime.Now
             });
         }
         finally
@@ -523,7 +528,7 @@ window._aimInitScroll = function(dotnetRef) {
             await JS.InvokeVoidAsync("eval",
                 "const el=document.querySelector('.aim-msgs');if(el)el.scrollTo({top:el.scrollHeight,behavior:'smooth'});");
         }
-        catch { }
+        catch (Exception ex) { Logger.LogDebug(ex, "平滑滚动失败"); }
     }
 
     /// <summary>瞬间滚动到底部（OnAfterRenderAsync 内部使用，避免平滑动画延迟）</summary>
@@ -534,7 +539,7 @@ window._aimInitScroll = function(dotnetRef) {
             await JS.InvokeVoidAsync("eval",
                 "const el=document.querySelector('.aim-msgs');if(el)el.scrollTop=el.scrollHeight;");
         }
-        catch { }
+        catch (Exception ex) { Logger.LogDebug(ex, "瞬时滚动失败"); }
     }
 
     public void Dispose()

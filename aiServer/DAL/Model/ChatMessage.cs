@@ -34,7 +34,8 @@ namespace vehicleManagement.aiServer.DAL.Model
         /// <summary>
         /// AI 思考过程内容（仅 assistant 角色使用）
         /// </summary>
-        public string ThinkingContent { get; set; }
+        // 可空：库里该列是 TEXT NULL
+        public string? ThinkingContent { get; set; }
 
         /// <summary>
         /// 消息时间

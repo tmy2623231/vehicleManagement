@@ -97,8 +97,7 @@ namespace vehicleManagement.aiServer.BLL
                 return (UserIntent.VehicleQuery, match.Value);
             }
 
-            // 纯闲聊/帮助关键词（仅在没有命中任何数据查询意图时才生效）
-            // 排除包含数据查询关键词的组合输入（如"怎么查京A"不应该被拦截）
+            // 纯闲聊/帮助关键词（仅未命中数据查询意图时生效）
             string[] generalKeywords = { "你好", "谢谢", "再见", "帮助", "功能", "版本" };
             foreach (var kw in generalKeywords)
             {
