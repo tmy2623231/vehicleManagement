@@ -28,9 +28,11 @@ namespace vehicleManagement.DAL.Repository
                 .Include(r => r.FinalLocation)
                 .Include(r => r.UsageRecordPurposes)
                     .ThenInclude(p => p.Purpose)
+                .AsNoTracking()
                 .ToListAsync();
         }
 
+        // 不加 AsNoTracking：调用方会「读-改-写」，脱跟踪后 SetValues 找不到原实体
         public async Task<VehicleUsageRecord> GetByIdAsync(int id)
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
@@ -75,6 +77,8 @@ namespace vehicleManagement.DAL.Repository
             return await ((IQueryable<VehicleUsageRecord>)db.VehicleUsageRecords)
                 .Where(r => r.VehicleId == vehicleId)
                 .OrderByDescending(r => r.CreatedAt)
+                .ThenByDescending(r => r.Id)
+                .AsNoTracking()
                 .FirstOrDefaultAsync();
         }
     }

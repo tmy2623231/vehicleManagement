@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using vehicleManagement.BLL.Auth;
 using vehicleManagement.BLL.Common;
 using vehicleManagement.DAL;
 using vehicleManagement.DAL.Common;
@@ -18,19 +19,22 @@ namespace vehicleManagement.BLL.Personnel
     {
         private readonly PersonnelRepository _personnelRepo;
         private readonly DepartmentRepository _deptRepo;
-        private readonly UsageRecordRepository _recordRepo;
         private readonly IDbContextFactory<VehicleDbContext> _dbFactory;
+        private readonly ICurrentUser _currentUser;
+        private readonly AuditService _auditService;
 
         public PersonnelService(
             PersonnelRepository personnelRepo,
             DepartmentRepository deptRepo,
-            UsageRecordRepository recordRepo,
-            IDbContextFactory<VehicleDbContext> dbFactory)
+            IDbContextFactory<VehicleDbContext> dbFactory,
+            ICurrentUser currentUser,
+            AuditService auditService)
         {
             _personnelRepo = personnelRepo;
             _deptRepo = deptRepo;
-            _recordRepo = recordRepo;
             _dbFactory = dbFactory;
+            _currentUser = currentUser;
+            _auditService = auditService;
         }
 
         /// <summary>
@@ -42,6 +46,11 @@ namespace vehicleManagement.BLL.Personnel
             await using var db = await _dbFactory.CreateDbContextAsync();
             IQueryable<Models.Personnel> query = db.Personnel.Include(p => p.Department);
 
+            // 部门隔离：Admin 为 null（不限），其余只能看本部门
+            var me = await _currentUser.GetAsync();
+            if (me.ScopeDepartmentId is int scopedDeptId)
+                query = query.Where(p => p.DepartmentId == scopedDeptId);
+
             // 搜索过滤
             if (!string.IsNullOrWhiteSpace(searchKeyword))
             {
@@ -52,25 +61,22 @@ namespace vehicleManagement.BLL.Personnel
             // 排序
             query = sortColumn switch
             {
-                "name" => sortAscending ? query.OrderBy(p => p.Name) : query.OrderByDescending(p => p.Name),
-                "phone" => sortAscending ? query.OrderBy(p => p.Phone) : query.OrderByDescending(p => p.Phone),
-                _ => sortAscending ? query.OrderBy(p => p.CreatedAt) : query.OrderByDescending(p => p.CreatedAt)
+                "name" => sortAscending
+                    ? query.OrderBy(p => p.Name).ThenBy(p => p.Id)
+                    : query.OrderByDescending(p => p.Name).ThenByDescending(p => p.Id),
+                "phone" => sortAscending
+                    ? query.OrderBy(p => p.Phone).ThenBy(p => p.Id)
+                    : query.OrderByDescending(p => p.Phone).ThenByDescending(p => p.Id),
+                _ => sortAscending
+                    ? query.OrderBy(p => p.CreatedAt).ThenBy(p => p.Id)
+                    : query.OrderByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id)
             };
 
+            pageSize = PagedResult.ClampPageSize(pageSize);
             var totalCount = await query.CountAsync();
-            if (page > 1 && page > (int)Math.Ceiling((double)totalCount / pageSize))
-                page = (int)Math.Ceiling((double)totalCount / pageSize);
-            if (page < 1) page = 1;
-
+            page = PagedResult.ClampPage(page, totalCount, pageSize);
             var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
-
-            return new PagedResult<Models.Personnel>
-            {
-                Items = items,
-                TotalCount = totalCount,
-                CurrentPage = page,
-                PageSize = pageSize
-            };
+            return PagedResult.Of(items, totalCount, page, pageSize);
         }
 
         /// <summary>
@@ -94,6 +100,11 @@ namespace vehicleManagement.BLL.Personnel
         /// </summary>
         public async Task<Models.Personnel> CreateAsync(int departmentId, string name, string phone, bool isActive)
         {
+            // 部门管理员新建人员强制落在本部门，忽略前端传入的部门
+            var me = await _currentUser.GetAsync();
+            if (me.ScopeDepartmentId is int scopedDeptId)
+                departmentId = scopedDeptId;
+
             var personnel = new Models.Personnel
             {
                 DepartmentId = departmentId,
@@ -102,7 +113,10 @@ namespace vehicleManagement.BLL.Personnel
                 IsActive = isActive,
                 CreatedAt = ChinaTime.Now
             };
-            return await _personnelRepo.AddAsync(personnel);
+            var created = await _personnelRepo.AddAsync(personnel);
+            await _auditService.WriteAsync("Personnel.Create", "Personnel", created.Id,
+                $"姓名={created.Name}，部门Id={created.DepartmentId}");
+            return created;
         }
 
         /// <summary>
@@ -113,13 +127,20 @@ namespace vehicleManagement.BLL.Personnel
             var personnel = await _personnelRepo.GetByIdAsync(id);
             if (personnel == null) return null;
 
-            personnel.DepartmentId = departmentId;
+            var me = await _currentUser.GetAsync();
+            if (!me.CanAccessDepartment(personnel.DepartmentId) || !me.CanAccessDepartment(departmentId))
+                return null;
+
+            personnel.DepartmentId = me.ScopeDepartmentId ?? departmentId;
             personnel.Name = name.Trim();
             personnel.Phone = phone?.Trim();
             personnel.IsActive = isActive;
             personnel.UpdatedAt = ChinaTime.Now;
 
-            return await _personnelRepo.UpdateAsync(personnel);
+            var updated = await _personnelRepo.UpdateAsync(personnel);
+            await _auditService.WriteAsync("Personnel.Update", "Personnel", id,
+                $"姓名={updated.Name}，部门Id={updated.DepartmentId}");
+            return updated;
         }
 
         /// <summary>
@@ -127,15 +148,36 @@ namespace vehicleManagement.BLL.Personnel
         /// </summary>
         public async Task<(bool Success, string ErrorMessage)> DeleteAsync(int id)
         {
-            // 校验：该人员是否有使用记录
-            var allRecords = await _recordRepo.GetAllAsync();
-            if (allRecords.Any(r => r.PersonnelId == id))
-            {
-                return (false, "无法删除该人员：该人员还有使用记录，请先删除相关使用记录。");
-            }
+            var me = await _currentUser.GetAsync();
+            await using var db = await _dbFactory.CreateDbContextAsync();
 
-            var result = await _personnelRepo.DeleteAsync(id);
-            return result ? (true, null) : (false, "删除失败：人员不存在。");
+            var target = await db.Personnel.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
+            if (target == null) return (false, "删除失败：人员不存在。");
+            if (!me.CanAccessDepartment(target.DepartmentId)) return (false, "无权操作该部门数据。");
+
+            // 为一个布尔判断，原先拉全库使用记录 + 5 层 Include
+            if (await db.VehicleUsageRecords.AnyAsync(r => r.PersonnelId == id))
+                return (false, "无法删除该人员：该人员还有使用记录，请先删除相关使用记录。");
+
+            var personnelName = target.Name;
+
+            // 删人员 + 禁用其账号，同一 DbContext 单次 SaveChanges（同进同退）
+            var personnel = await db.Personnel.FirstOrDefaultAsync(p => p.Id == id);
+            if (personnel == null)
+                return (false, "删除失败：人员不存在。");
+
+            // 账号只禁用不硬删（审计日志按用户名引用）
+            var accounts = await db.AppUsers.Where(u => u.PersonnelId == id).ToListAsync();
+            foreach (var account in accounts)
+                account.IsActive = false;
+
+            db.Personnel.Remove(personnel);
+            await db.SaveChangesAsync();
+
+            await _auditService.WriteAsync("Personnel.Delete", "Personnel", id,
+                $"姓名={personnelName}，联动禁用账号数={accounts.Count}");
+
+            return (true, null);
         }
     }
 }

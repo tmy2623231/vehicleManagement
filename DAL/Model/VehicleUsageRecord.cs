@@ -20,6 +20,9 @@ namespace vehicleManagement.DAL.Model
         [Required]
         public int PersonnelId { get; set; }
 
+        /// <summary>是否借车登记：true=跨部门借车，false=同部门使用。记录维度唯一判据，与车辆当前状态无关。</summary>
+        public bool IsBorrow { get; set; }
+
         [Required]
         public int FinalLocationId { get; set; }
 
@@ -30,11 +33,12 @@ namespace vehicleManagement.DAL.Model
 
         public double? MileageEnd { get; set; }
 
-        public string ImagePaths { get; set; }
+        // 可空：与现库列定义（TEXT NULL）一致
+        public string? ImagePaths { get; set; }
 
-        public string VideoPaths { get; set; }
+        public string? VideoPaths { get; set; }
 
-        public string Remarks { get; set; }
+        public string? Remarks { get; set; }
 
         public DateTime CreatedAt { get; set; } = ChinaTime.Now;
 
@@ -51,5 +55,9 @@ namespace vehicleManagement.DAL.Model
         public Location FinalLocation { get; set; }
 
         public List<VehicleUsageRecordPurpose> UsageRecordPurposes { get; set; }
+
+        /// <summary>列表展示用的记录类型文案</summary>
+        [NotMapped]
+        public string RecordKindText => IsBorrow ? "借车" : "使用";
     }
 }

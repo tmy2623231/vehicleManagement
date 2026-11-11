@@ -21,10 +21,12 @@ namespace vehicleManagement.DAL.Repository
             await using var db = await _dbFactory.CreateDbContextAsync();
             return await db.VehicleMaintenanceRecords
                 .Include(r => r.Vehicle).ThenInclude(v => v.Department)
+                .AsNoTracking()
                 .OrderByDescending(r => r.MaintenanceDate)
                 .ToListAsync();
         }
 
+        // 不加 AsNoTracking：调用方会「读-改-写」，脱跟踪后 SetValues 找不到原实体
         public async Task<VehicleMaintenanceRecord> GetByIdAsync(int id)
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
@@ -39,13 +41,15 @@ namespace vehicleManagement.DAL.Repository
             return record;
         }
 
-        public async Task<VehicleMaintenanceRecord> UpdateAsync(VehicleMaintenanceRecord record)
+        public async Task<VehicleMaintenanceRecord> UpdateAsync(VehicleMaintenanceRecord patch)
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
-            record.UpdatedAt = ChinaTime.Now;
-            db.VehicleMaintenanceRecords.Update(record);
+            var existing = await db.VehicleMaintenanceRecords.FindAsync(patch.Id);
+            if (existing is null) return patch;      // 保持现有「不抛异常」返回契约
+            patch.UpdatedAt = ChinaTime.Now;
+            db.Entry(existing).CurrentValues.SetValues(patch);   // 只覆盖标量列与 FK，导航属性一律不动
             await db.SaveChangesAsync();
-            return record;
+            return existing;
         }
 
         public async Task<bool> DeleteAsync(int id)

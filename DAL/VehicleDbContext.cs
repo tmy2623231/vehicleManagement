@@ -18,6 +18,10 @@ namespace vehicleManagement.DAL
         public DbSet<VehicleUsageRecordPurpose> VehicleUsageRecordPurposes { get; set; }
         public DbSet<VehicleMaintenanceRecord> VehicleMaintenanceRecords { get; set; }
 
+        // 账号与审计：表结构由 SchemaBootstrapper 幂等建立（新库靠模型、老库靠 DDL，两处必须同时有）
+        public DbSet<AppUser> AppUsers { get; set; }
+        public DbSet<AuditLog> AuditLogs { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -31,6 +35,8 @@ namespace vehicleManagement.DAL
             modelBuilder.Entity<Personnel>(entity =>
             {
                 entity.HasIndex(e => e.DepartmentId);
+                // 列表页固定按「部门 + 启用」过滤
+                entity.HasIndex(e => new { e.DepartmentId, e.IsActive });
             });
 
             // Vehicle 配置
@@ -39,12 +45,16 @@ namespace vehicleManagement.DAL
                 entity.HasIndex(e => e.LicensePlate).IsUnique();
                 entity.HasIndex(e => e.QrCodeToken).IsUnique();
                 entity.HasIndex(e => e.DepartmentId);
+                // 列表页固定按「状态 + 车牌」排序过滤
+                entity.HasIndex(e => new { e.Status, e.LicensePlate });
             });
 
             // Location 配置
             modelBuilder.Entity<Location>(entity =>
             {
                 entity.HasIndex(e => e.Category);
+                // 按分类取启用地点时固定走「分类 + 启用 + 排序」
+                entity.HasIndex(e => new { e.Category, e.IsActive, e.SortOrder });
             });
 
             // VehicleUsageRecord 配置
@@ -53,6 +63,11 @@ namespace vehicleManagement.DAL
                 entity.HasIndex(e => e.VehicleId);
                 entity.HasIndex(e => e.DepartmentId);
                 entity.HasIndex(e => e.CreatedAt);
+                // 删除人员/地点前的引用校验（AnyAsync）与列表页排序
+                entity.HasIndex(e => e.PersonnelId);
+                entity.HasIndex(e => e.FinalLocationId);
+                entity.HasIndex(e => new { e.DepartmentId, e.CreatedAt });
+                entity.HasIndex(e => new { e.VehicleId, e.CreatedAt });
 
                 entity.HasOne(e => e.Vehicle)
                       .WithMany()
@@ -79,10 +94,24 @@ namespace vehicleManagement.DAL
             modelBuilder.Entity<VehicleMaintenanceRecord>(entity =>
             {
                 entity.HasIndex(e => e.VehicleId);
+                entity.HasIndex(e => e.MaintenanceDate);
+                // 列表按「维修人所属部门」判定跨部门维修
+                entity.HasIndex(e => e.MaintainerDepartmentId);
 
                 entity.HasOne(e => e.Vehicle)
                       .WithMany()
                       .HasForeignKey(e => e.VehicleId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                // 维修人 / 维修部门是登记时的身份快照，两者都可能为空（老库补列、Admin 登记）
+                entity.HasOne(e => e.Maintainer)
+                      .WithMany()
+                      .HasForeignKey(e => e.MaintainerPersonnelId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.MaintainerDepartment)
+                      .WithMany()
+                      .HasForeignKey(e => e.MaintainerDepartmentId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
 
@@ -101,6 +130,21 @@ namespace vehicleManagement.DAL
                       .WithMany()
                       .HasForeignKey(e => e.PurposeId)
                       .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // AppUser 配置：用户名唯一；人员绑定用部分唯一索引（NULL 不参与唯一约束）
+            modelBuilder.Entity<AppUser>(entity =>
+            {
+                entity.HasIndex(e => e.UserName).IsUnique();
+                entity.HasIndex(e => e.PersonnelId).IsUnique().HasFilter("PersonnelId IS NOT NULL");
+                entity.HasIndex(e => e.DepartmentId);
+            });
+
+            // AuditLog 配置：只追加，不加任何导航/级联
+            modelBuilder.Entity<AuditLog>(entity =>
+            {
+                entity.HasIndex(e => e.CreatedAt);
+                entity.HasIndex(e => e.Action);
             });
         }
     }

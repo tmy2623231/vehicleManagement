@@ -1,15 +1,240 @@
 @page "/maintenance-records"
+@attribute [Authorize(Roles = vehicleManagement.DAL.Model.Roles.Admin)]
 @inject MaintenanceRecordService MaintenanceService
-@inject VehicleService VehicleService
+@inject FileUploadService FileUploadService
 @inject NavigationManager Nav
+@inject ILogger<MaintenanceRecords> Logger
 
 <div class="flex justify-between items-center mb-5">
     <div>
         <h2 class="text-xl font-bold text-dark">维修记录管理</h2>
-        <p class="text-sm text-gray mt-1">查看和管理所有车辆维修记录</p>
+        <p class="text-sm text-gray mt-1">查看、编辑和管理所有车辆维修记录</p>
     </div>
     <button class="btn btn-secondary" @onclick="GoToVehicles">← 返回车辆列表</button>
 </div>
+
+@* ===== 详情弹框：一条记录的全部业务字段，「类型」只取 MaintenanceKindText ===== *@
+@if (showDetail)
+{
+    <div class="modal-overlay show" @onclick="CloseDetail">
+        <div class="modal" style="max-width:720px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">维修记录详情</div>
+                <button class="modal-close" @onclick="CloseDetail">✕</button>
+            </div>
+            @if (detailLoading)
+            {
+                <p class="text-sm text-gray">加载中...</p>
+            }
+            else if (detailRecord is null)
+            {
+                <p class="text-sm text-gray">该记录已不存在，可能已被删除。</p>
+            }
+            else
+            {
+                <div class="grid grid-2" style="gap:14px 20px;">
+                    <div>
+                        <div class="input-label">车牌号</div>
+                        <div>@Val(detailRecord.Vehicle?.LicensePlate)</div>
+                    </div>
+                    <div>
+                        <div class="input-label">车辆所属部门</div>
+                        <div>@Val(detailRecord.Vehicle?.Department?.Name)</div>
+                    </div>
+                    <div>
+                        <div class="input-label">维修人</div>
+                        <div>@detailRecord.MaintainerName</div>
+                    </div>
+                    <div>
+                        <div class="input-label">维修部门</div>
+                        <div>@detailRecord.MaintainerDepartmentName</div>
+                    </div>
+                    <div>
+                        <div class="input-label">类型</div>
+                        <div>
+                            @if (string.IsNullOrEmpty(detailRecord.MaintenanceKindBadgeClass))
+                            {
+                                <span>-</span>
+                            }
+                            else
+                            {
+                                <span class="badge @detailRecord.MaintenanceKindBadgeClass">@detailRecord.MaintenanceKindText</span>
+                            }
+                        </div>
+                    </div>
+                    <div>
+                        <div class="input-label">维修日期</div>
+                        <div>@detailRecord.MaintenanceDate.ToString("yyyy-MM-dd")</div>
+                    </div>
+                    <div>
+                        <div class="input-label">费用(元)</div>
+                        <div>@detailRecord.Cost.ToString("F2")</div>
+                    </div>
+                    <div>
+                        <div class="input-label">登记时间</div>
+                        <div>@detailRecord.CreatedAt.ToString("yyyy-MM-dd HH:mm")</div>
+                    </div>
+                    <div style="grid-column:1 / -1;">
+                        <div class="input-label">维修项目/内容</div>
+                        <div>@Val(detailRecord.Description)</div>
+                    </div>
+                    <div style="grid-column:1 / -1;">
+                        <div class="input-label">备注</div>
+                        <div>@Val(detailRecord.Remarks)</div>
+                    </div>
+                    <div style="grid-column:1 / -1;">
+                        <div class="input-label">最后更新时间</div>
+                        <div>@(detailRecord.UpdatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "-")</div>
+                    </div>
+                    <div style="grid-column:1 / -1;">
+                        <div class="input-label">附件</div>
+                        @{
+                            var detailFiles = MaintenanceService.GetAttachmentFiles(detailRecord);
+                        }
+                        @if (detailFiles.Any())
+                        {
+                            <div class="flex gap-2" style="flex-wrap:wrap;">
+                                @for (var i = 0; i < detailFiles.Count; i++)
+                                {
+                                    var idx = i;
+                                    <button class="btn btn-sm btn-info" @onclick="() => OpenViewer(detailFiles, idx)">
+                                        @Path.GetFileName(detailFiles[idx])
+                                    </button>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div>-</div>
+                        }
+                    </div>
+                </div>
+            }
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseDetail">关闭</button>
+                @if (detailRecord is not null)
+                {
+                    <button class="btn btn-primary" @onclick="() => ShowEditForm(detailRecord.Id)">编辑此记录</button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== 编辑弹框：只允许改业务字段，车辆归属与身份快照只读展示 ===== *@
+@if (showEditForm)
+{
+    <div class="modal-overlay show" @onclick="CloseEditForm">
+        <div class="modal" style="max-width:640px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">编辑维修记录</div>
+                <button class="modal-close" @onclick="CloseEditForm">✕</button>
+            </div>
+            <div>
+                <div class="grid grid-2 mb-4">
+                    <div>
+                        @* 车辆归属是登记时的归属，改了就篡改跨部门判定与「类型」文案，故仅只读展示 *@
+                        <label class="input-label">车辆</label>
+                        <input class="input-field" type="text" value="@editVehicleText" readonly disabled />
+                    </div>
+                    <div>
+                        <label class="input-label">维修人 / 维修部门</label>
+                        <input class="input-field" type="text" value="@editMaintainerText" readonly disabled />
+                    </div>
+                </div>
+                <div class="grid grid-2 mb-4">
+                    <div>
+                        <label class="input-label">维修日期 <span style="color:var(--red-600)">*</span></label>
+                        <input class="input-field" type="date" @bind="editDate" />
+                    </div>
+                    <div>
+                        <label class="input-label">维修费用</label>
+                        <input class="input-field" type="number" step="0.01" placeholder="0.00" @bind="editCost" />
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="input-label">维修项目/内容 <span style="color:var(--red-600)">*</span></label>
+                    <input class="input-field" type="text" placeholder="如：更换刹车片" @bind="editDescription" />
+                </div>
+                <div class="mb-4">
+                    <label class="input-label">备注</label>
+                    <input class="input-field" type="text" placeholder="备注信息（可选）" @bind="editRemarks" />
+                </div>
+                <div class="mb-4">
+                    <label class="input-label">附件</label>
+                    <InputFile OnChange="OnEditFileSelected" multiple accept="image/*" disabled="@editUploading" />
+                    @if (editUploading)
+                    {
+                        <div style="color:var(--primary-600);margin-top:4px;">上传中...</div>
+                    }
+                    @if (editAttachments.Any())
+                    {
+                        <div style="margin-top:6px;">
+                            @foreach (var f in editAttachments)
+                            {
+                                <span class="badge badge-green" style="margin:0 6px 6px 0;">
+                                    @Path.GetFileName(f)
+                                    <a style="cursor:pointer;margin-left:6px;color:var(--red-600);"
+                                       @onclick="() => RemoveAttachment(f)">✕</a>
+                                </span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-sm text-gray" style="margin-top:4px;">暂无附件</div>
+                    }
+                </div>
+                @if (!string.IsNullOrEmpty(editSaveError))
+                {
+                    <p class="text-sm" style="color:var(--red-600);">@editSaveError</p>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseEditForm">取消</button>
+                <button class="btn btn-primary" @onclick="SaveEdit" disabled="@saving">@(saving ? "保存中..." : "保存")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== 附件查看器：图片/视频内嵌，其它类型给可打开的链接兜底 ===== *@
+@if (showViewer && viewerFiles.Count > 0)
+{
+    var currentFile = viewerFiles[Math.Min(currentFileIndex, viewerFiles.Count - 1)];
+    <div class="modal-overlay show" @onclick="CloseViewer">
+        <div class="modal" style="max-width:720px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">附件查看 (@(currentFileIndex + 1) / @viewerFiles.Count)</div>
+                <button class="modal-close" @onclick="CloseViewer">✕</button>
+            </div>
+            <div style="text-align:center;min-height:400px;display:flex;align-items:center;justify-content:center;">
+                @if (MaintenanceService.IsImageFile(currentFile))
+                {
+                    <img src="@currentFile" style="max-height:500px;max-width:100%;" alt="附件" />
+                }
+                else if (MaintenanceService.IsVideoFile(currentFile))
+                {
+                    <video src="@currentFile" controls style="max-height:500px;max-width:100%;"></video>
+                }
+                else
+                {
+                    <div>
+                        <p class="text-sm text-gray">该文件类型不支持内嵌预览</p>
+                        @* 相对路径直连 /Folder/** 静态映射，不拼绝对路径 *@
+                        <a class="btn btn-primary" href="@currentFile" target="_blank" rel="noopener">在新标签页打开</a>
+                    </div>
+                }
+            </div>
+            <p class="text-sm text-gray text-center mt-3">@Path.GetFileName(currentFile)</p>
+            <div class="modal-footer">
+                <button class="btn btn-sm btn-secondary" @onclick="PrevFile" disabled="@(currentFileIndex == 0)">← 上一个</button>
+                <span class="text-sm text-gray">@(currentFileIndex + 1) / @viewerFiles.Count</span>
+                <button class="btn btn-sm btn-secondary" @onclick="NextFile" disabled="@(currentFileIndex >= viewerFiles.Count - 1)">下一个 →</button>
+            </div>
+        </div>
+    </div>
+}
 
 <!-- 删除确认弹框 -->
 @if (showDeleteConfirm)
@@ -21,7 +246,7 @@
                 <button class="modal-close" @onclick="CloseDeleteConfirm">✕</button>
             </div>
             <p style="color:var(--gray-700);font-size:15px;line-height:1.6;">
-                确定要删除这条维修记录吗？<br/>
+                确定要删除这条维修记录吗？<br />
                 <span class="text-sm text-gray">车辆：@deletingVehicleName，项目：@deletingDescription</span>
             </p>
             <div class="modal-footer">
@@ -61,38 +286,74 @@
         </div>
     </div>
     <div class="table-wrapper">
-    <table>
-        <thead>
-            <tr>
-                <th>车牌号</th>
-                <th>所属部门</th>
-                <th>维修日期</th>
-                <th>维修项目</th>
-                <th>费用(元)</th>
-                <th>备注</th>
-                <th>操作</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var r in records)
-            {
+        <table>
+            <thead>
                 <tr>
-                    <td><a href="/maintenance/@r.VehicleId" style="color:var(--primary-600);text-decoration:none;">@r.Vehicle?.LicensePlate ?? "-"</a></td>
-                    <td>@(r.Vehicle?.Department?.Name ?? "-")</td>
-                    <td>@r.MaintenanceDate.ToString("yyyy-MM-dd")</td>
-                    <td>@r.Description</td>
-                    <td>@r.Cost.ToString("F2")</td>
-                    <td>@(r.Remarks ?? "-")</td>
-                    <td>
-                        <div class="flex gap-2">
-                            <button class="btn btn-sm btn-outline" @onclick="() => GoToMaintenance(r.VehicleId)">查看/编辑</button>
-                            <button class="btn btn-sm btn-danger" @onclick="() => ShowDeleteConfirm(r)">删除</button>
-                        </div>
-                    </td>
+                    <th>车牌号</th>
+                    <th>车辆所属部门</th>
+                    <th>维修人</th>
+                    <th>维修部门</th>
+                    <th>类型</th>
+                    <th>维修日期</th>
+                    <th>维修项目</th>
+                    <th>费用(元)</th>
+                    <th>备注</th>
+                    <th>附件</th>
+                    <th>登记时间</th>
+                    <th>操作</th>
                 </tr>
-            }
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                @foreach (var r in records)
+                {
+                    var rowFiles = MaintenanceService.GetAttachmentFiles(r);
+                    <tr>
+                        <td>
+                            <a style="color:var(--primary-600);text-decoration:none;cursor:pointer;"
+                               @onclick="() => ShowDetail(r.Id)">@(r.Vehicle?.LicensePlate ?? "-")</a>
+                        </td>
+                        <td>@(r.Vehicle?.Department?.Name ?? "-")</td>
+                        <td>@r.MaintainerName</td>
+                        <td>@r.MaintainerDepartmentName</td>
+                        @* 类型取记录维度快照（VehicleMaintenanceRecord.MaintenanceKindText），未知显示「-」 *@
+                        <td>
+                            @if (string.IsNullOrEmpty(r.MaintenanceKindBadgeClass))
+                            {
+                                <span>-</span>
+                            }
+                            else
+                            {
+                                <span class="badge @r.MaintenanceKindBadgeClass">@r.MaintenanceKindText</span>
+                            }
+                        </td>
+                        <td>@r.MaintenanceDate.ToString("yyyy-MM-dd")</td>
+                        <td>@Val(r.Description)</td>
+                        <td>@r.Cost.ToString("F2")</td>
+                        <td>@Val(r.Remarks)</td>
+                        <td>
+                            @if (rowFiles.Any())
+                            {
+                                <button class="btn btn-sm btn-info" @onclick="() => OpenViewer(rowFiles, 0)">
+                                    @rowFiles.Count 个附件
+                                </button>
+                            }
+                            else
+                            {
+                                <span>-</span>
+                            }
+                        </td>
+                        <td>@r.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>
+                            <div class="flex gap-2">
+                                <button class="btn btn-sm btn-outline" @onclick="() => ShowDetail(r.Id)">详情</button>
+                                <button class="btn btn-sm btn-info" @onclick="() => ShowEditForm(r.Id)">编辑</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => ShowDeleteConfirm(r)">删除</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -106,6 +367,31 @@
     private int totalCount = 0;
     private int totalPages => totalCount > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 1;
 
+    // ===== 详情弹框 =====
+    private bool showDetail = false;
+    private bool detailLoading = false;
+    private VehicleMaintenanceRecord? detailRecord = null;
+
+    // ===== 编辑弹框 =====
+    private bool showEditForm = false;
+    private bool saving = false;
+    private bool editUploading = false;
+    private int editId = 0;
+    private string editVehicleText = "";
+    private string editMaintainerText = "";
+    private DateTime editDate = ChinaTime.Now;
+    private string editDescription = "";
+    private decimal editCost = 0;
+    private string editRemarks = "";
+    private List<string> editAttachments = new();
+    private string editSaveError = "";
+
+    // ===== 附件查看器 =====
+    private bool showViewer = false;
+    private List<string> viewerFiles = new();
+    private int currentFileIndex = 0;
+
+    // ===== 删除 / 错误 =====
     private bool showDeleteConfirm = false;
     private int deletingId = 0;
     private string deletingVehicleName = "";
@@ -135,26 +421,199 @@
         await LoadData();
     }
 
+    /// <summary>空值统一显示「-」，避免留白与 null 渲染异常。</summary>
+    private static string Val(string? value) => string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    // ===== 详情 =====
+    private async Task ShowDetail(int id)
+    {
+        showDetail = true;
+        detailLoading = true;
+        detailRecord = null;
+        try
+        {
+            // 带车辆(含所属部门)/维修人/维修部门导航，「类型」才有判据；服务内部已 AsNoTracking
+            // 越权与不存在同样返回 null：页面只回「该记录已不存在」，不回显任何字段
+            detailRecord = await MaintenanceService.GetDetailAsync(id);
+        }
+        catch (Exception ex)
+        {
+            showDetail = false;
+            Logger.LogError(ex, "加载维修记录详情失败 Id={Id}", id);
+            errorMessage = "加载维修记录失败，请稍后重试或联系管理员。";
+        }
+        finally
+        {
+            detailLoading = false;
+        }
+    }
+
+    private void CloseDetail()
+    {
+        showDetail = false;
+        detailRecord = null;
+    }
+
+    // ===== 编辑 =====
+    private async Task ShowEditForm(int id)
+    {
+        try
+        {
+            var r = await MaintenanceService.GetDetailAsync(id);
+            if (r is null)
+            {
+                errorMessage = "该记录已不存在，可能已被删除。";
+                await LoadData();
+                return;
+            }
+
+            editId = r.Id;
+            editVehicleText = $"{r.Vehicle?.LicensePlate ?? "-"}（{r.Vehicle?.Department?.Name ?? "-"}）";
+            editMaintainerText = $"{r.MaintainerName} / {r.MaintainerDepartmentName}";
+            editDate = r.MaintenanceDate;
+            editDescription = r.Description ?? "";
+            editCost = r.Cost;
+            editRemarks = r.Remarks ?? "";
+            editAttachments = MaintenanceService.GetAttachmentFiles(r);
+            editSaveError = "";
+            showDetail = false;
+            showEditForm = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "加载维修记录编辑数据失败 Id={Id}", id);
+            errorMessage = "加载维修记录失败，请稍后重试或联系管理员。";
+        }
+    }
+
+    private void CloseEditForm()
+    {
+        showEditForm = false;
+        editSaveError = "";
+    }
+
+    private async Task OnEditFileSelected(InputFileChangeEventArgs e)
+    {
+        editUploading = true;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(10))
+            {
+                try
+                {
+                    var path = await FileUploadService.UploadFileAsync(file, "维修记录", "通用", "通用");
+                    editAttachments.Add(path);
+                }
+                catch (Exception ex)
+                {
+                    editSaveError = $"上传失败：{ex.Message}";
+                }
+            }
+        }
+        finally
+        {
+            editUploading = false;
+        }
+    }
+
+    private void RemoveAttachment(string path) => editAttachments.Remove(path);
+
+    private async Task SaveEdit()
+    {
+        if (string.IsNullOrWhiteSpace(editDescription))
+        {
+            editSaveError = "请填写维修项目/内容。";
+            return;
+        }
+
+        saving = true;
+        editSaveError = "";
+        try
+        {
+            var patch = await MaintenanceService.GetDetailAsync(editId);
+            if (patch is null)
+            {
+                editSaveError = "该记录已不存在，可能已被删除。";
+                return;
+            }
+
+            // 只改业务字段；车辆归属、维修人/部门快照、登记时间由 BLL 以库内值固定，这里不碰
+            patch.MaintenanceDate = editDate.Date;
+            patch.Description = editDescription.Trim();
+            patch.Cost = editCost;
+            patch.Remarks = string.IsNullOrWhiteSpace(editRemarks) ? null : editRemarks.Trim();
+            patch.ImagePaths = editAttachments.Count > 0 ? string.Join(";", editAttachments) : null;
+
+            // 服务层先断归属：越权 / 记录不存在均以 (false, 文案) 返回，这里只展示文案，不拼异常信息
+            var (ok, error) = await MaintenanceService.UpdateAsync(patch);
+            if (!ok)
+            {
+                editSaveError = error;
+                return;
+            }
+
+            showEditForm = false;
+            await LoadData();          // 保存后列表立即反映新值，无需刷新或重进页面
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "保存维修记录失败 Id={Id}", editId);
+            editSaveError = "保存失败，请稍后重试或联系管理员。";
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    // ===== 附件查看器 =====
+    private void OpenViewer(List<string> files, int startIndex)
+    {
+        if (files.Count == 0) return;
+        viewerFiles = files;
+        currentFileIndex = Math.Clamp(startIndex, 0, files.Count - 1);
+        showViewer = true;
+    }
+
+    private void CloseViewer() => showViewer = false;
+
+    private void PrevFile()
+    {
+        if (currentFileIndex > 0) currentFileIndex--;
+    }
+
+    private void NextFile()
+    {
+        if (currentFileIndex < viewerFiles.Count - 1) currentFileIndex++;
+    }
+
+    // ===== 删除 =====
     private void ShowDeleteConfirm(VehicleMaintenanceRecord r)
     {
         deletingId = r.Id;
-        deletingVehicleName = r.Vehicle?.LicensePlate ?? "";
-        deletingDescription = r.Description ?? "";
+        deletingVehicleName = r.Vehicle?.LicensePlate ?? "-";
+        deletingDescription = Val(r.Description);
         showDeleteConfirm = true;
     }
 
     private void CloseDeleteConfirm() => showDeleteConfirm = false;
 
-    private void CloseError() => errorMessage = "";
-
-    private void GoToVehicles() => Nav.NavigateTo("/vehicles");
-    private void GoToMaintenance(int vehicleId) => Nav.NavigateTo($"/maintenance/{vehicleId}");
-
     private async Task ConfirmDelete()
     {
         showDeleteConfirm = false;
         var (success, error) = await MaintenanceService.DeleteAsync(deletingId);
-        if (!success) errorMessage = error;
-        else await LoadData();
+        if (!success)
+        {
+            errorMessage = error;
+            return;
+        }
+        // 被删掉的记录若还开着详情/编辑弹框，一并关掉
+        if (detailRecord?.Id == deletingId) CloseDetail();
+        if (editId == deletingId) CloseEditForm();
+        await LoadData();
     }
+
+    private void CloseError() => errorMessage = "";
+
+    private void GoToVehicles() => Nav.NavigateTo("/vehicles");
 }

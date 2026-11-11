@@ -1,4 +1,5 @@
 @page "/usage-records"
+@attribute [Authorize(Roles = vehicleManagement.DAL.Model.Roles.BackOffice)]
 @inject UsageRecordService RecordService
 @inject MaintenanceRecordService MaintenanceService
 @inject VehicleService VehicleService
@@ -29,6 +30,9 @@
                 <th style="cursor:pointer" @onclick="@(() => ToggleSort("vehicle"))">
                     车辆 @SortIndicator("vehicle")
                 </th>
+                <th style="cursor:pointer" @onclick="@(() => ToggleSort("type"))">
+                    类型 @SortIndicator("type")
+                </th>
                 <th>使用部门</th>
                 <th style="cursor:pointer" @onclick="@(() => ToggleSort("person"))">
                     使用人员 @SortIndicator("person")
@@ -49,6 +53,17 @@
             {
                 <tr>
                     <td>@(r.Vehicle?.LicensePlate ?? "-")</td>
+                    <td>
+                        @* 按记录维度快照展示，不看车辆当前是否被借用 *@
+                        @if (r.IsBorrow)
+                        {
+                            <span class="badge badge-orange">借车</span>
+                        }
+                        else
+                        {
+                            <span class="badge badge-green">使用</span>
+                        }
+                    </td>
                     <td>@(r.Department?.Name ?? "-")</td>
                     <td>@(r.Personnel?.Name ?? "-")</td>
                     <td>
@@ -119,7 +134,10 @@
         <thead>
             <tr>
                 <th>车牌号</th>
-                <th>所属部门</th>
+                <th>车辆所属部门</th>
+                <th>维修人</th>
+                <th>维修部门</th>
+                <th>类型</th>
                 <th>维修日期</th>
                 <th>维修项目</th>
                 <th>费用</th>
@@ -134,6 +152,19 @@
                 <tr>
                     <td>@r.Vehicle?.LicensePlate</td>
                     <td>@(r.Vehicle?.Department?.Name ?? "-")</td>
+                    <td>@r.MaintainerName</td>
+                    <td>@r.MaintainerDepartmentName</td>
+                    @* 类型取记录维度快照（VehicleMaintenanceRecord.MaintenanceKindText），未知显示「-」 *@
+                    <td>
+                        @if (string.IsNullOrEmpty(r.MaintenanceKindBadgeClass))
+                        {
+                            <span>-</span>
+                        }
+                        else
+                        {
+                            <span class="badge @r.MaintenanceKindBadgeClass">@r.MaintenanceKindText</span>
+                        }
+                    </td>
                     <td>@r.MaintenanceDate.ToString("yyyy-MM-dd")</td>
                     <td>@r.Description</td>
                     <td>@(r.Cost > 0 ? $"¥{r.Cost:F2}" : "-")</td>
@@ -232,9 +263,17 @@
                 {
                     <img src="@viewerFiles[currentFileIndex]" style="max-height:500px;max-width:100%;" alt="附件" />
                 }
-                else
+                else if (IsVideoFile(viewerFiles[currentFileIndex]))
                 {
                     <video src="@viewerFiles[currentFileIndex]" controls style="max-height:500px;max-width:100%;"></video>
+                }
+                else
+                {
+                    <div>
+                        <p class="text-sm text-gray">该文件类型不支持内嵌预览</p>
+                        @* 相对路径直连 /Folder/** 静态映射，不拼绝对路径 *@
+                        <a class="btn btn-primary" href="@viewerFiles[currentFileIndex]" target="_blank" rel="noopener">在新标签页打开</a>
+                    </div>
                 }
             </div>
             <p class="text-sm text-gray text-center mt-3">@Path.GetFileName(viewerFiles[currentFileIndex])</p>
@@ -260,13 +299,21 @@
                 <div class="grid grid-2 mb-4">
                     <div>
                         <label class="input-label">车辆 <span style="color:var(--red-600)">*</span></label>
-                        <select class="input-field" @bind="maintenanceFormVehicleId">
-                            <option value="0">-- 请选择 --</option>
-                            @foreach (var v in allVehiclesForMaintenance)
-                            {
-                                <option value="@v.Id">@v.LicensePlate (@v.Department?.Name)</option>
-                            }
-                        </select>
+                        @if (maintenanceEditId == 0)
+                        {
+                            <select class="input-field" @bind="maintenanceFormVehicleId">
+                                <option value="0">-- 请选择 --</option>
+                                @foreach (var v in allVehiclesForMaintenance)
+                                {
+                                    <option value="@v.Id">@v.LicensePlate (@v.Department?.Name)</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            @* 车辆归属是登记时的事实，改了就篡改跨部门判定与「类型」文案；BLL 也会固定回库内值 *@
+                            <input class="input-field" type="text" value="@maintenanceFormVehicleText" readonly disabled />
+                        }
                     </div>
                     <div>
                         <label class="input-label">维修日期 <span style="color:var(--red-600)">*</span></label>
@@ -350,6 +397,8 @@
     private bool showMaintenanceForm = false;
     private int maintenanceEditId = 0;
     private int maintenanceFormVehicleId = 0;
+    /// <summary>编辑态的车辆只读展示文本（车牌号 + 所属部门），新增态不用</summary>
+    private string maintenanceFormVehicleText = "";
     private DateTime maintenanceFormDate = ChinaTime.Now;
     private string maintenanceFormDescription = "";
     private decimal maintenanceFormCost = 0;
@@ -412,6 +461,7 @@
     {
         maintenanceEditId = r.Id;
         maintenanceFormVehicleId = r.VehicleId;
+        maintenanceFormVehicleText = $"{r.Vehicle?.LicensePlate ?? "-"}（{r.Vehicle?.Department?.Name ?? "-"}）";
         maintenanceFormDate = r.MaintenanceDate;
         maintenanceFormDescription = r.Description ?? "";
         maintenanceFormCost = r.Cost;
@@ -447,7 +497,7 @@
                 await MaintenanceService.CreateAsync(new VehicleMaintenanceRecord
                 {
                     VehicleId = maintenanceFormVehicleId,
-                    MaintenanceDate = maintenanceFormDate,
+                    MaintenanceDate = maintenanceFormDate.Date,
                     Description = maintenanceFormDescription.Trim(),
                     Cost = maintenanceFormCost,
                     Remarks = maintenanceFormRemarks?.Trim(),
@@ -460,8 +510,8 @@
                 var r = await MaintenanceService.GetByIdAsync(maintenanceEditId);
                 if (r != null)
                 {
-                    r.VehicleId = maintenanceFormVehicleId;
-                    r.MaintenanceDate = maintenanceFormDate;
+                    // 车辆归属不可改（BLL 会固定回库内快照），只改业务字段
+                    r.MaintenanceDate = maintenanceFormDate.Date;
                     r.Description = maintenanceFormDescription.Trim();
                     r.Cost = maintenanceFormCost;
                     r.Remarks = maintenanceFormRemarks?.Trim();
@@ -525,6 +575,7 @@
     {
         if (sortColumn == column) sortAscending = !sortAscending;
         else { sortColumn = column; sortAscending = true; }
+        // 有意 fire-and-forget：ToggleSort 是同步 void，改 Task 只会把异常升级成断电路
         _ = LoadData();
     }
 
@@ -571,17 +622,17 @@
     private List<string> GetAllFiles(VehicleUsageRecord r) => RecordService.GetAllFiles(r);
 
     /// <summary>
-    /// 获取维修记录的所有附件路径（按分号拆分 ImagePaths）
+    /// 获取维修记录的所有附件路径（委托给 MaintenanceRecordService，与 /maintenance-records 同源）
     /// </summary>
-    private List<string> GetMaintenanceFiles(VehicleMaintenanceRecord r) =>
-        string.IsNullOrEmpty(r.ImagePaths)
-            ? new List<string>()
-            : r.ImagePaths.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList();
+    private List<string> GetMaintenanceFiles(VehicleMaintenanceRecord r) => MaintenanceService.GetAttachmentFiles(r);
 
     /// <summary>
     /// 判断文件是否为图片（委托给 UsageRecordService）
     /// </summary>
     private bool IsImageFile(string path) => RecordService.IsImageFile(path);
+
+    /// <summary>判断文件是否为视频（两者都不是时走「新标签页打开」兜底）</summary>
+    private bool IsVideoFile(string path) => RecordService.IsVideoFile(path);
 
     private void OpenViewer(List<string> files, int startIndex)
     {

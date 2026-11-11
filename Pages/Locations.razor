@@ -1,4 +1,5 @@
 @page "/locations"
+@attribute [Authorize(Roles = vehicleManagement.DAL.Model.Roles.Admin)]
 @inject LocationService LocService
 
 <div class="flex justify-between items-center mb-5">
@@ -252,7 +253,9 @@
         await LoadData();
     }
 
+    // 有意 fire-and-forget：ToggleSort 是同步 void，改 Task 只会把异常升级成断电路
     private void ToggleSort1(string col) { if (sortCol1 == col) sortAsc1 = !sortAsc1; else { sortCol1 = col; sortAsc1 = true; } _ = LoadData(); }
+    // 同上：同步 void 的排序切换，丢弃异常优于让 renderer 断电路
     private void ToggleSort2(string col) { if (sortCol2 == col) sortAsc2 = !sortAsc2; else { sortCol2 = col; sortAsc2 = true; } _ = LoadData(); }
     private string SortInd1(string col) => sortCol1 != col ? "" : (sortAsc1 ? "▲" : "▼");
     private string SortInd2(string col) => sortCol2 != col ? "" : (sortAsc2 ? "▲" : "▼");

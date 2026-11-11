@@ -1,9 +1,11 @@
 @page "/borrow/{VehicleId:int}"
+@attribute [Authorize(Roles = vehicleManagement.DAL.Model.Roles.Admin)]
 @inject VehicleService VehicleService
 @inject ExecuteService ExecService
 @inject FileUploadService FileUploadService
 @inject LocationService LocationService
 @inject NavigationManager Nav
+@inject ILogger<BorrowForm> Logger
 
 <div class="flex justify-between items-center mb-5">
     <div>
@@ -28,7 +30,7 @@ else if (saved)
         <div style="font-size:18px;font-weight:600;color:var(--dark);margin-bottom:8px;">借车记录已保存</div>
         <div style="color:var(--gray-500);margin-bottom:20px;">车辆 @vehicle.LicensePlate 的借车信息已成功登记</div>
         <div style="display:flex;gap:12px;justify-content:center;">
-            <button class="btn btn-primary" @onclick="Reset">继续登记</button>
+            <button class="btn btn-primary" @onclick="ResetAsync">继续登记</button>
             <button class="btn btn-secondary" @onclick="GoToVehicles">返回车辆列表</button>
         </div>
     </div>
@@ -45,10 +47,6 @@ else
                     <div><span style="color:var(--gray-600);font-size:13px;">车牌号</span><div style="font-weight:600;font-size:18px;color:var(--dark);">@vehicle.LicensePlate</div></div>
                     <div><span style="color:var(--gray-600);font-size:13px;">所属部门</span><div style="font-weight:500;">@(vehicle.Department?.Name ?? "-")</div></div>
                     <div><span style="color:var(--gray-600);font-size:13px;">品牌/型号</span><div style="font-weight:500;">@vehicle.Brand @vehicle.Model</div></div>
-                    <div><span style="color:var(--gray-600);font-size:13px;">借用状态</span><div>
-                        @if (vehicle.IsBorrowed) { <span class="badge badge-orange">已被借用</span> }
-                        else { <span class="badge badge-green">可借用</span> }
-                    </div></div>
                 </div>
             </div>
         </div>
@@ -177,12 +175,25 @@ else
 
     private void GoToVehicles() => Nav.NavigateTo("/vehicles");
 
-    protected override async Task OnInitializedAsync()
+    private int loadedVehicleId;
+
+    /// <summary>VehicleId 变化（换一辆车）必须按新车辆重算预填，不能沿用上一辆车的旧值</summary>
+    protected override async Task OnParametersSetAsync()
     {
+        if (loadedVehicleId == VehicleId) return;
+        loadedVehicleId = VehicleId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
         vehicle = await VehicleService.GetVehicleByIdAsync(VehicleId);
         allDepartments = await VehicleService.GetAllDepartmentsAsync();
         allWaypoints = await LocationService.GetActiveWaypointsAsync();
         allFinalLocations = await LocationService.GetActiveFinalLocationsAsync();
+        // 起始里程预填该车最近一次结束里程：只是默认值，仍可手工改写；无历史则保持为空
+        mileageStart = await ExecService.GetLastMileageEndAsync(VehicleId);
         loading = false;
     }
 
@@ -253,14 +264,13 @@ else
             var (success, error) = await ExecService.SaveRecordAsync(request);
             if (!success) { errorMessage = error; return; }
 
-            await VehicleService.ToggleBorrowedAsync(VehicleId, true);
             saved = true;
         }
-        catch (Exception ex) { errorMessage = $"保存失败：{ex.Message}"; }
+        catch (Exception ex) { errorMessage = "保存失败，请稍后重试或联系管理员"; Logger.LogError(ex, "补登借车记录失败 VehicleId={Id}", VehicleId); }
         finally { saving = false; }
     }
 
-    private void Reset()
+    private async Task ResetAsync()
     {
         saved = false;
         selectedDeptId = 0;
@@ -268,7 +278,8 @@ else
         selectedFinalLocationId = 0;
         selectedWaypoints = new();
         filteredPersonnel = new();
-        mileageStart = null;
+        // 继续登记：预填值按当前车辆重新计算，不沿用上一轮的旧值
+        mileageStart = await ExecService.GetLastMileageEndAsync(VehicleId);
         mileageEnd = null;
         remarks = "";
         uploadedFiles = new();

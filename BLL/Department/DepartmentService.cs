@@ -16,23 +16,17 @@ namespace vehicleManagement.BLL.Department
     public class DepartmentService
     {
         private readonly DepartmentRepository _deptRepo;
-        private readonly PersonnelRepository _personnelRepo;
-        private readonly VehicleRepository _vehicleRepo;
-        private readonly UsageRecordRepository _recordRepo;
         private readonly IDbContextFactory<VehicleDbContext> _dbFactory;
+        private readonly AuditService _auditService;
 
         public DepartmentService(
             DepartmentRepository deptRepo,
-            PersonnelRepository personnelRepo,
-            VehicleRepository vehicleRepo,
-            UsageRecordRepository recordRepo,
-            IDbContextFactory<VehicleDbContext> dbFactory)
+            IDbContextFactory<VehicleDbContext> dbFactory,
+            AuditService auditService)
         {
             _deptRepo = deptRepo;
-            _personnelRepo = personnelRepo;
-            _vehicleRepo = vehicleRepo;
-            _recordRepo = recordRepo;
             _dbFactory = dbFactory;
+            _auditService = auditService;
         }
 
         /// <summary>
@@ -54,25 +48,22 @@ namespace vehicleManagement.BLL.Department
             // 排序
             query = sortColumn switch
             {
-                "name" => sortAscending ? query.OrderBy(d => d.Name) : query.OrderByDescending(d => d.Name),
-                "desc" => sortAscending ? query.OrderBy(d => d.Description) : query.OrderByDescending(d => d.Description),
-                _ => sortAscending ? query.OrderBy(d => d.CreatedAt) : query.OrderByDescending(d => d.CreatedAt)
+                "name" => sortAscending
+                    ? query.OrderBy(d => d.Name).ThenBy(d => d.Id)
+                    : query.OrderByDescending(d => d.Name).ThenByDescending(d => d.Id),
+                "desc" => sortAscending
+                    ? query.OrderBy(d => d.Description).ThenBy(d => d.Id)
+                    : query.OrderByDescending(d => d.Description).ThenByDescending(d => d.Id),
+                _ => sortAscending
+                    ? query.OrderBy(d => d.CreatedAt).ThenBy(d => d.Id)
+                    : query.OrderByDescending(d => d.CreatedAt).ThenByDescending(d => d.Id)
             };
 
+            pageSize = PagedResult.ClampPageSize(pageSize);
             var totalCount = await query.CountAsync();
-            if (page > 1 && page > (int)Math.Ceiling((double)totalCount / pageSize))
-                page = (int)Math.Ceiling((double)totalCount / pageSize);
-            if (page < 1) page = 1;
-
+            page = PagedResult.ClampPage(page, totalCount, pageSize);
             var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
-
-            return new PagedResult<Models.Department>
-            {
-                Items = items,
-                TotalCount = totalCount,
-                CurrentPage = page,
-                PageSize = pageSize
-            };
+            return PagedResult.Of(items, totalCount, page, pageSize);
         }
 
         /// <summary>
@@ -107,7 +98,7 @@ namespace vehicleManagement.BLL.Department
 
             dept.Name = name.Trim();
             dept.Description = description?.Trim();
-            dept.UpdatedAt = DateTime.Now;
+            dept.UpdatedAt = ChinaTime.Now;
 
             return await _deptRepo.UpdateAsync(dept);
         }
@@ -117,30 +108,25 @@ namespace vehicleManagement.BLL.Department
         /// </summary>
         public async Task<(bool Success, string ErrorMessage)> DeleteAsync(int id)
         {
-            // 校验1：该部门下是否有人员
-            var personnel = await _personnelRepo.GetByDepartmentIdAsync(id);
-            if (personnel.Any())
-            {
+            // 原先三次全表加载（人员/车辆/使用记录）只为三个布尔判断
+            await using var db = await _dbFactory.CreateDbContextAsync();
+
+            var target = await db.Departments.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id);
+            if (target == null) return (false, "删除失败：部门不存在。");
+
+            if (await db.Personnel.AnyAsync(p => p.DepartmentId == id))
                 return (false, "无法删除该部门：该部门下还有人员记录，请先移除或转移相关人员。");
-            }
-
-            // 校验2：该部门下是否有车辆
-            var vehicles = await _vehicleRepo.GetAllAsync();
-            if (vehicles.Any(v => v.DepartmentId == id))
-            {
+            if (await db.Vehicles.AnyAsync(v => v.DepartmentId == id))
                 return (false, "无法删除该部门：该部门下还有车辆记录，请先移除或转移相关车辆。");
-            }
-
-            // 校验3：该部门下是否有使用记录
-            var allRecords = await _recordRepo.GetAllAsync();
-            if (allRecords.Any(r => r.DepartmentId == id))
-            {
+            if (await db.VehicleUsageRecords.AnyAsync(r => r.DepartmentId == id))
                 return (false, "无法删除该部门：该部门下还有使用记录，请先删除相关使用记录。");
-            }
 
             // 执行删除
             var result = await _deptRepo.DeleteAsync(id);
-            return result ? (true, null) : (false, "删除失败：部门不存在。");
+            if (!result) return (false, "删除失败：部门不存在。");
+
+            await _auditService.WriteAsync("Department.Delete", "Department", id, $"名称={target.Name}");
+            return (true, null);
         }
     }
 }

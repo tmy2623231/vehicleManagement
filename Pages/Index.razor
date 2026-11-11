@@ -1,4 +1,5 @@
 ﻿@page "/"
+@attribute [Authorize(Roles = vehicleManagement.DAL.Model.Roles.Admin)]
 @using System.Threading
 @inject DashboardService DashboardSvc
 @inject IJSRuntime JS
@@ -423,6 +424,7 @@
     {
         if (sortColumn == column) sortAscending = !sortAscending;
         else { sortColumn = column; sortAscending = true; }
+        // 有意 fire-and-forget：ToggleSort 是同步 void，改 Task 只会把异常升级成断电路
         _ = LoadRecentRecords();
     }
 

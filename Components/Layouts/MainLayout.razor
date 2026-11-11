@@ -2,7 +2,7 @@
 @using vehicleManagement.Components.Navigation
 
 <div class="app-layout">
-    <NavMenu IsOpen="sidebarOpen" />
+    <NavMenu IsOpen="sidebarOpen" OnLogout="OpenLogoutDialog" />
 
     <div class="main-wrapper">
         <header class="topbar">
@@ -22,10 +22,13 @@
     </div>
 </div>
 
+<LogoutConfirmDialog Visible="logoutDialogOpen" OnClose="CloseLogoutDialog" />
+
 <div class="sidebar-overlay @(sidebarOpen ? "show" : "")" @onclick="CloseSidebar"></div>
 
 @code {
     private bool sidebarOpen = false;
+    private bool logoutDialogOpen = false;
 
     private void ToggleSidebar()
     {
@@ -36,4 +39,13 @@
     {
         sidebarOpen = false;
     }
+
+    // 退出确认框渲染在布局根节点：侧边栏有 transform/overflow，弹框放里面会被裁剪
+    private void OpenLogoutDialog()
+    {
+        sidebarOpen = false;
+        logoutDialogOpen = true;
+    }
+
+    private void CloseLogoutDialog() => logoutDialogOpen = false;
 }

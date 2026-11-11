@@ -1,7 +1,28 @@
 @inherits LayoutComponentBase
 
+@* 扫码/登记专用布局：只有顶栏与内容区，不携带后台侧边栏，也不提供任何后台入口。 *@
+
 <div class="mobile-layout">
+    <div class="mobile-topbar">
+        <span class="mobile-topbar-user">
+            <AuthorizeView>
+                <Authorized>当前用户：@context.User.Identity.Name</Authorized>
+            </AuthorizeView>
+        </span>
+        <button type="button" class="logout-trigger mobile-topbar-logout" @onclick="OpenLogoutDialog">退出登录</button>
+    </div>
+
     <main class="mobile-content">
         @Body
     </main>
 </div>
+
+<LogoutConfirmDialog Visible="logoutDialogOpen" OnClose="CloseLogoutDialog" />
+
+@code {
+    private bool logoutDialogOpen = false;
+
+    private void OpenLogoutDialog() => logoutDialogOpen = true;
+
+    private void CloseLogoutDialog() => logoutDialogOpen = false;
+}

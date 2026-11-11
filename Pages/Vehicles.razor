@@ -1,10 +1,11 @@
 @page "/vehicles"
+@attribute [Authorize(Roles = vehicleManagement.DAL.Model.Roles.BackOffice)]
 @inject VehicleService VehicleService
 @inject QrCodeService QrCodeService
 @inject VehicleExportService ExportService
 @inject IJSRuntime JS
-@inject IHttpContextAccessor HttpContextAccessor
 @inject NavigationManager Nav
+@inject ILogger<Vehicles> Logger
 
 <div class="flex justify-between items-center mb-5">
     <div>
@@ -243,6 +244,7 @@
     {
         if (sortColumn == column) sortAscending = !sortAscending;
         else { sortColumn = column; sortAscending = true; }
+        // 有意 fire-and-forget：ToggleSort 是同步 void，改 Task 只会把异常升级成断电路
         _ = LoadData();
     }
 
@@ -346,9 +348,8 @@
         // 确保 Token 存在
         await VehicleService.EnsureQrCodeTokenAsync(v, QrCodeService);
 
-        // 从当前 HTTP 请求自动获取外部访问的 Scheme + Host（浏览器 Host 头包含实际 IP:端口）
-        var request = HttpContextAccessor.HttpContext.Request;
-        var baseUrl = $"{request.Scheme}://{request.Host}";
+        // Circuit 回调中 HttpContext 恒为 null，BaseUri 由 <base href> 解析
+        var baseUrl = Nav.BaseUri.TrimEnd('/');
 
         var url = QrCodeService.GenerateVehicleQrCodeUrl(v.QrCodeToken, baseUrl);
         var base64 = QrCodeService.GenerateQrCodeBase64(url);
@@ -384,14 +385,23 @@
         showDeleteConfirm = false;
         errorMessage = null;
 
-        var (success, errorMsg) = await VehicleService.DeleteVehicleAsync(deletingVehicleId);
-        if (!success)
+        try
         {
-            errorMessage = errorMsg;
-            return;
-        }
+            var (success, errorMsg) = await VehicleService.DeleteVehicleAsync(deletingVehicleId);
+            if (!success)
+            {
+                errorMessage = errorMsg;
+                return;
+            }
 
-        await LoadData();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            // 最后一道网：不让裸异常抛到 Circuit（否则整页交互失效）
+            Logger.LogError(ex, "删除车辆 {Id} 时发生未预期异常", deletingVehicleId);
+            errorMessage = "删除失败，请稍后重试或联系管理员";
+        }
     }
 
     private async Task ExportExcel(Vehicle v)

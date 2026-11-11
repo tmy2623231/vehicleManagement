@@ -2,6 +2,14 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- 只启用注解、不产生 NRT 分析警告，顺带消掉潜在的 CS8632。
+         注意：启用注解上下文后 EF Core 会把非空注解的 string 推断成 NOT NULL 列，
+         故模型中可空列必须显式写 string?（见 DAL/Model）。-->
+    <Nullable>annotations</Nullable>
+    <!-- 档 1：唯一「忘 await 就是 bug」的类别，当前 0 命中 -->
+    <WarningsAsErrors>CS4014</WarningsAsErrors>
+    <!-- 档 2：基线已达 0 警告，任何新警告一律升为错误 -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -9,6 +17,14 @@
     <Content Remove="Folder\logo\**" />
     <EmbeddedResource Remove="Folder\logo\**" />
     <None Remove="Folder\logo\**" />
+  </ItemGroup>
+
+  <!-- 测试工程不能被 Web SDK 的 **/*.cs 通配吞掉，否则主工程找不到 xUnit 包直接构建红 -->
+  <ItemGroup>
+    <Compile Remove="tests/**" />
+    <Content Remove="tests/**" />
+    <EmbeddedResource Remove="tests/**" />
+    <None Remove="tests/**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +42,9 @@
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="Microsoft.SemanticKernel" Version="1.77.0" />
+    <!-- 默认连接器：任意 OpenAI 兼容中转（one-api / new-api / 自建网关 / Ollama 的 /v1 兼容层） -->
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.77.0" />
+    <!-- 回退通道：把 AiServer:Provider 改成 Ollama 即可切回，无需改代码 -->
     <PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" Version="1.77.0-alpha" />
   </ItemGroup>
 

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using vehicleManagement.BLL.Auth;
 using vehicleManagement.BLL.Common;
 using vehicleManagement.DAL;
 using vehicleManagement.DAL.Common;
@@ -21,6 +22,8 @@ namespace vehicleManagement.BLL.Vehicle
         private readonly DepartmentRepository _deptRepo;
         private readonly IDbContextFactory<VehicleDbContext> _dbFactory;
         private readonly FileUploadService _fileService;
+        private readonly ICurrentUser _currentUser;
+        private readonly AuditService _auditService;
         private readonly ILogger<VehicleService> _logger;
 
         public VehicleService(
@@ -28,37 +31,32 @@ namespace vehicleManagement.BLL.Vehicle
             DepartmentRepository deptRepo,
             IDbContextFactory<VehicleDbContext> dbFactory,
             FileUploadService fileService,
+            ICurrentUser currentUser,
+            AuditService auditService,
             ILogger<VehicleService> logger)
         {
             _vehicleRepo = vehicleRepo;
             _deptRepo = deptRepo;
             _dbFactory = dbFactory;
             _fileService = fileService;
+            _currentUser = currentUser;
+            _auditService = auditService;
             _logger = logger;
         }
 
         /// <summary>
-        /// 根据部门ID获取在职人员列表
+        /// 根据部门ID获取在职人员列表。超出自身可见范围时返回空列表（不报错，不泄露部门存在性）。
         /// </summary>
         public async Task<List<Models.Personnel>> GetPersonnelByDepartmentAsync(int departmentId)
         {
+            var me = await _currentUser.GetAsync();
+            if (!me.CanAccessDepartment(departmentId))
+                return new List<Models.Personnel>();
+
             await using var db = await _dbFactory.CreateDbContextAsync();
             return await ((IQueryable<Models.Personnel>)db.Personnel)
                 .Where(p => p.DepartmentId == departmentId && p.IsActive)
                 .ToListAsync();
-        }
-
-        /// <summary>
-        /// 设置车辆借用状态
-        /// </summary>
-        public async Task ToggleBorrowedAsync(int vehicleId, bool isBorrowed)
-        {
-            var v = await _vehicleRepo.GetByIdAsync(vehicleId);
-            if (v != null)
-            {
-                v.IsBorrowed = isBorrowed;
-                await _vehicleRepo.UpdateAsync(v);
-            }
         }
 
         /// <summary>
@@ -69,6 +67,11 @@ namespace vehicleManagement.BLL.Vehicle
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
             IQueryable<Models.Vehicle> query = db.Vehicles.Include(v => v.Department);
+
+            // 部门隔离：Admin 为 null（不限），其余只能看本部门
+            var me = await _currentUser.GetAsync();
+            if (me.ScopeDepartmentId is int scopedDeptId)
+                query = query.Where(v => v.DepartmentId == scopedDeptId);
 
             // 搜索过滤
             if (!string.IsNullOrWhiteSpace(searchKeyword))
@@ -84,28 +87,25 @@ namespace vehicleManagement.BLL.Vehicle
             // 排序
             query = sortColumn switch
             {
-                "plate" => sortAscending ? query.OrderBy(v => v.LicensePlate) : query.OrderByDescending(v => v.LicensePlate),
+                "plate" => sortAscending
+                    ? query.OrderBy(v => v.LicensePlate).ThenBy(v => v.Id)
+                    : query.OrderByDescending(v => v.LicensePlate).ThenByDescending(v => v.Id),
                 "brand" => sortAscending
-                    ? query.OrderBy(v => v.Brand).ThenBy(v => v.Model)
-                    : query.OrderByDescending(v => v.Brand).ThenByDescending(v => v.Model),
-                "color" => sortAscending ? query.OrderBy(v => v.Color) : query.OrderByDescending(v => v.Color),
-                _ => sortAscending ? query.OrderBy(v => v.CreatedAt) : query.OrderByDescending(v => v.CreatedAt)
+                    ? query.OrderBy(v => v.Brand).ThenBy(v => v.Model).ThenBy(v => v.Id)
+                    : query.OrderByDescending(v => v.Brand).ThenByDescending(v => v.Model).ThenByDescending(v => v.Id),
+                "color" => sortAscending
+                    ? query.OrderBy(v => v.Color).ThenBy(v => v.Id)
+                    : query.OrderByDescending(v => v.Color).ThenByDescending(v => v.Id),
+                _ => sortAscending
+                    ? query.OrderBy(v => v.CreatedAt).ThenBy(v => v.Id)
+                    : query.OrderByDescending(v => v.CreatedAt).ThenByDescending(v => v.Id)
             };
 
+            pageSize = PagedResult.ClampPageSize(pageSize);
             var totalCount = await query.CountAsync();
-            if (page > 1 && page > (int)Math.Ceiling((double)totalCount / pageSize))
-                page = (int)Math.Ceiling((double)totalCount / pageSize);
-            if (page < 1) page = 1;
-
+            page = PagedResult.ClampPage(page, totalCount, pageSize);
             var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
-
-            return new PagedResult<Models.Vehicle>
-            {
-                Items = items,
-                TotalCount = totalCount,
-                CurrentPage = page,
-                PageSize = pageSize
-            };
+            return PagedResult.Of(items, totalCount, page, pageSize);
         }
 
         /// <summary>
@@ -140,9 +140,15 @@ namespace vehicleManagement.BLL.Vehicle
         /// </summary>
         public async Task<List<Models.Vehicle>> GetActiveVehiclesAsync()
         {
+            var me = await _currentUser.GetAsync();
+            var scope = me.ScopeDepartmentId;
+
             await using var db = await _dbFactory.CreateDbContextAsync();
-            return await db.Vehicles
-                .Include(v => v.Department)
+            var query = db.Vehicles.Include(v => v.Department).AsQueryable();
+            if (scope is int scopedDeptId)
+                query = query.Where(v => v.DepartmentId == scopedDeptId);
+
+            return await query
                 .Where(v => v.Status == Models.VehicleStatus.Active)
                 .OrderBy(v => v.LicensePlate)
                 .ToListAsync();
@@ -153,16 +159,31 @@ namespace vehicleManagement.BLL.Vehicle
         /// </summary>
         public async Task<Models.Vehicle> CreateVehicleAsync(Models.Vehicle vehicle)
         {
-            return await _vehicleRepo.AddAsync(vehicle);
+            // 部门管理员新建车辆强制落在本部门，忽略前端传入的部门
+            var me = await _currentUser.GetAsync();
+            if (me.ScopeDepartmentId is int scopedDeptId)
+                vehicle.DepartmentId = scopedDeptId;
+
+            var created = await _vehicleRepo.AddAsync(vehicle);
+            await _auditService.WriteAsync("Vehicle.Create", "Vehicle", created.Id,
+                $"车牌={created.LicensePlate}，部门Id={created.DepartmentId}");
+            return created;
         }
 
         /// <summary>
-        /// 更新车辆
+        /// 更新车辆（写前校验归属）
         /// </summary>
         public async Task<Models.Vehicle> UpdateVehicleAsync(Models.Vehicle vehicle)
         {
+            var me = await _currentUser.GetAsync();
+            if (!me.CanAccessDepartment(vehicle.DepartmentId))
+                throw new UnauthorizedAccessException("无权操作其他部门的车辆");
+
             vehicle.UpdatedAt = ChinaTime.Now;
-            return await _vehicleRepo.UpdateAsync(vehicle);
+            var updated = await _vehicleRepo.UpdateAsync(vehicle);
+            await _auditService.WriteAsync("Vehicle.Update", "Vehicle", updated.Id,
+                $"车牌={updated.LicensePlate}，部门Id={updated.DepartmentId}");
+            return updated;
         }
 
         /// <summary>
@@ -171,33 +192,56 @@ namespace vehicleManagement.BLL.Vehicle
         public async Task<(bool Success, string ErrorMessage)> DeleteVehicleAsync(int id)
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
+
+            var me = await _currentUser.GetAsync();
+            var target = await db.Vehicles.AsNoTracking().FirstOrDefaultAsync(v => v.Id == id);
+            if (target is null)
+                return (false, "删除失败：车辆不存在。");
+            if (!me.CanAccessDepartment(target.DepartmentId))
+                return (false, "无权操作该部门数据。");
+
             var hasRecords = await db.VehicleUsageRecords.AnyAsync(r => r.VehicleId == id);
             if (hasRecords)
             {
                 return (false, "无法删除该车辆：该车辆还有使用记录，请先删除相关使用记录。");
             }
 
+            // 维修记录同样是 DeleteBehavior.Restrict，不先校验就会在 SaveChanges 时抛 DbUpdateException
+            var hasMaintenance = await db.VehicleMaintenanceRecords.AnyAsync(r => r.VehicleId == id);
+            if (hasMaintenance)
+            {
+                return (false, "无法删除该车辆：该车辆还有维修记录，请先删除相关维修记录。");
+            }
+
             var vehicle = await db.Vehicles.FindAsync(id);
             if (vehicle == null) return (false, "删除失败：车辆不存在。");
 
-            // 先清理车辆图片附件，失败则阻止 DB 删除
-            if (!string.IsNullOrEmpty(vehicle.ImagePath))
+            var licensePlate = vehicle.LicensePlate;
+            var departmentId = vehicle.DepartmentId;
+            var imagePath = vehicle.ImagePath;
+
+            // 先落库再删文件：记录指向已删文件无法恢复，孤儿文件只是浪费磁盘
+            db.Vehicles.Remove(vehicle);
+            try
             {
-                try
-                {
-                    _fileService.DeleteFile(vehicle.ImagePath);
-                    _logger.LogInformation("删除车辆 {Id} 时清理了图片附件", id);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "删除车辆 {Id} 的图片附件失败，已阻止数据库删除", id);
-                    return (false, "删除失败：图片附件被占用或无法访问，请稍后重试。");
-                }
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                // 兜住校验与提交之间的并发窗口：对方在我们校验后插入了引用记录
+                _logger.LogError(ex, "删除车辆 {Id} 失败：仍存在外键引用", id);
+                return (false, "删除失败：该车辆仍被其他记录引用，请先清理关联数据。");
             }
 
-            db.Vehicles.Remove(vehicle);
-            await db.SaveChangesAsync();
+            if (!string.IsNullOrEmpty(imagePath))
+            {
+                try { _fileService.DeleteFile(imagePath); }
+                catch (Exception ex) { _logger.LogWarning(ex, "附件清理失败（孤儿文件）：{Path}", imagePath); }
+            }
+
             _logger.LogInformation("车辆 {Id} 已删除", id);
+            await _auditService.WriteAsync("Vehicle.Delete", "Vehicle", id,
+                $"车牌={licensePlate}，部门Id={departmentId}");
             return (true, null);
         }
 
@@ -206,6 +250,12 @@ namespace vehicleManagement.BLL.Vehicle
         /// </summary>
         public async Task<(bool CanDownload, string ErrorMessage)> ValidateQrCodeDownloadAsync(Models.Vehicle vehicle)
         {
+            var me = await _currentUser.GetAsync();
+            if (!me.CanAccessDepartment(vehicle.DepartmentId))
+            {
+                return (false, "无权操作该部门数据。");
+            }
+
             // 校验1：车辆是否已绑定部门
             if (vehicle.DepartmentId == 0 || vehicle.Department == null)
             {

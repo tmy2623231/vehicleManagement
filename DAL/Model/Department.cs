@@ -13,7 +13,8 @@ namespace vehicleManagement.DAL.Model
         [MaxLength(100)]
         public string Name { get; set; }
 
-        public string Description { get; set; }
+        // 可空：与现库列定义（TEXT NULL）一致；Nullable=annotations 下不标 ? 会被 EF 推断成 NOT NULL
+        public string? Description { get; set; }
 
         public DateTime CreatedAt { get; set; } = ChinaTime.Now;
 

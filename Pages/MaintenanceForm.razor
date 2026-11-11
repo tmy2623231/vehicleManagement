@@ -1,9 +1,11 @@
 @page "/maintenance/{VehicleId:int}"
+@attribute [Authorize(Roles = vehicleManagement.DAL.Model.Roles.Admin)]
 @inject VehicleService VehicleService
 @inject MaintenanceRecordService MaintenanceService
 @inject LocationService LocationService
 @inject FileUploadService FileUploadService
 @inject NavigationManager Nav
+@inject ICurrentUser CurrentUser
 
 <div class="flex justify-between items-center mb-5">
     <div>
@@ -57,6 +59,12 @@ else
                 <div class="card-title">维修信息登记</div>
             </div>
             <div style="padding:0 20px 20px;">
+                <div class="grid grid-1 mb-4">
+                    <div>
+                        <label class="input-label">维修人</label>
+                        <div style="padding:8px 12px;background:var(--gray-100);border-radius:6px;color:var(--gray-700);">@maintainerDisplay</div>
+                    </div>
+                </div>
                 <div class="grid grid-1 mb-4">
                     <div>
                         <label class="input-label">维修日期 <span style="color:var(--red-600)">*</span></label>
@@ -117,11 +125,20 @@ else
     private string formRemarks = "";
     private string errorMessage = "";
 
+    /// <summary>维修人按登录身份记录，页面只读展示（不提供改选，避免前端传值决定归属）</summary>
+    private string maintainerDisplay = "";
+
     private void GoToVehicles() => Nav.NavigateTo("/vehicles");
 
     protected override async Task OnInitializedAsync()
     {
         vehicle = await VehicleService.GetVehicleByIdAsync(VehicleId);
+
+        var me = await CurrentUser.GetAsync();
+        maintainerDisplay = me.DepartmentId is null
+            ? $"{me.UserName}（未绑定部门，列表中显示为「未知」）"
+            : me.UserName;
+
         loading = false;
     }
 

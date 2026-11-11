@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using vehicleManagement.BLL.Auth;
 using vehicleManagement.BLL.Common;
 using vehicleManagement.DAL;
 using vehicleManagement.DAL.Common;
@@ -21,19 +22,29 @@ namespace vehicleManagement.BLL.UsageRecord
         private readonly UsageRecordRepository _recordRepo;
         private readonly IDbContextFactory<VehicleDbContext> _dbFactory;
         private readonly FileUploadService _fileService;
+        private readonly ICurrentUser _currentUser;
+        private readonly AuditService _auditService;
         private readonly ILogger<UsageRecordService> _logger;
 
         /// <summary>
-        /// 支持的图片扩展名
+        /// 支持的图片扩展名（与 MaintenanceRecordService 同一口径，两处附件查看器行为一致）
         /// </summary>
         private static readonly string[] ImageExtensions = { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
 
+        /// <summary>
+        /// 支持的视频扩展名（非图片附件的内嵌预览）
+        /// </summary>
+        private static readonly string[] VideoExtensions = { ".mp4", ".avi", ".mov", ".wmv" };
+
         public UsageRecordService(UsageRecordRepository recordRepo, IDbContextFactory<VehicleDbContext> dbFactory,
-            FileUploadService fileService, ILogger<UsageRecordService> logger)
+            FileUploadService fileService, ICurrentUser currentUser, AuditService auditService,
+            ILogger<UsageRecordService> logger)
         {
             _recordRepo = recordRepo;
             _dbFactory = dbFactory;
             _fileService = fileService;
+            _currentUser = currentUser;
+            _auditService = auditService;
             _logger = logger;
         }
 
@@ -53,6 +64,11 @@ namespace vehicleManagement.BLL.UsageRecord
                     .ThenInclude(p => p.Purpose)
                 .AsQueryable();
 
+            // 部门隔离：Admin 为 null（不限），其余只能看本部门
+            var me = await _currentUser.GetAsync();
+            if (me.ScopeDepartmentId is int scopedDeptId)
+                query = query.Where(r => r.DepartmentId == scopedDeptId);
+
             // 搜索过滤
             if (!string.IsNullOrWhiteSpace(searchKeyword))
             {
@@ -67,28 +83,25 @@ namespace vehicleManagement.BLL.UsageRecord
             query = sortColumn switch
             {
                 "vehicle" => sortAscending
-                    ? query.OrderBy(r => r.Vehicle != null ? r.Vehicle.LicensePlate : "")
-                    : query.OrderByDescending(r => r.Vehicle != null ? r.Vehicle.LicensePlate : ""),
+                    ? query.OrderBy(r => r.Vehicle != null ? r.Vehicle.LicensePlate : "").ThenBy(r => r.Id)
+                    : query.OrderByDescending(r => r.Vehicle != null ? r.Vehicle.LicensePlate : "").ThenByDescending(r => r.Id),
                 "person" => sortAscending
-                    ? query.OrderBy(r => r.Personnel != null ? r.Personnel.Name : "")
-                    : query.OrderByDescending(r => r.Personnel != null ? r.Personnel.Name : ""),
-                _ => sortAscending ? query.OrderBy(r => r.CreatedAt) : query.OrderByDescending(r => r.CreatedAt)
+                    ? query.OrderBy(r => r.Personnel != null ? r.Personnel.Name : "").ThenBy(r => r.Id)
+                    : query.OrderByDescending(r => r.Personnel != null ? r.Personnel.Name : "").ThenByDescending(r => r.Id),
+                // 类型列取记录维度的 IsBorrow，不读车辆当前借用状态
+                "type" => sortAscending
+                    ? query.OrderBy(r => r.IsBorrow).ThenBy(r => r.Id)
+                    : query.OrderByDescending(r => r.IsBorrow).ThenByDescending(r => r.Id),
+                _ => sortAscending
+                    ? query.OrderBy(r => r.CreatedAt).ThenBy(r => r.Id)
+                    : query.OrderByDescending(r => r.CreatedAt).ThenByDescending(r => r.Id)
             };
 
+            pageSize = PagedResult.ClampPageSize(pageSize);
             var totalCount = await query.CountAsync();
-            if (page > 1 && page > (int)Math.Ceiling((double)totalCount / pageSize))
-                page = (int)Math.Ceiling((double)totalCount / pageSize);
-            if (page < 1) page = 1;
-
+            page = PagedResult.ClampPage(page, totalCount, pageSize);
             var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
-
-            return new PagedResult<VehicleUsageRecord>
-            {
-                Items = items,
-                TotalCount = totalCount,
-                CurrentPage = page,
-                PageSize = pageSize
-            };
+            return PagedResult.Of(items, totalCount, page, pageSize);
         }
 
         /// <summary>
@@ -105,18 +118,14 @@ namespace vehicleManagement.BLL.UsageRecord
                 .Include(r => r.Personnel)
                 .Where(r => r.CreatedAt >= since)
                 .OrderByDescending(r => r.CreatedAt)
+                .ThenByDescending(r => r.Id)
                 .AsQueryable();
 
+            pageSize = PagedResult.ClampPageSize(pageSize);
             var totalCount = await query.CountAsync();
+            page = PagedResult.ClampPage(page, totalCount, pageSize);
             var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
-
-            return new PagedResult<VehicleUsageRecord>
-            {
-                Items = items,
-                TotalCount = totalCount,
-                CurrentPage = page,
-                PageSize = pageSize
-            };
+            return PagedResult.Of(items, totalCount, page, pageSize);
         }
 
         /// <summary>
@@ -124,32 +133,34 @@ namespace vehicleManagement.BLL.UsageRecord
         /// </summary>
         public async Task<(bool Success, string ErrorMessage)> DeleteAsync(int id)
         {
+            // 部门管理员对使用记录只有只读权
+            var me = await _currentUser.GetAsync();
+            if (me.IsDeptAdmin)
+                return (false, "部门管理员无删除权限。");
+
             await using var db = await _dbFactory.CreateDbContextAsync();
             var record = await db.VehicleUsageRecords.FindAsync(id);
             if (record == null) return (false, "删除失败：记录不存在。");
+            if (!me.CanAccessDepartment(record.DepartmentId))
+                return (false, "无权操作该部门数据。");
 
-            // 先清理所有附件物理文件，失败则阻止 DB 删除
-            try
-            {
-                var files = new List<string>();
-                if (!string.IsNullOrEmpty(record.ImagePaths))
-                    files.AddRange(record.ImagePaths.Split(';', StringSplitOptions.RemoveEmptyEntries));
-                if (!string.IsNullOrEmpty(record.VideoPaths))
-                    files.AddRange(record.VideoPaths.Split(';', StringSplitOptions.RemoveEmptyEntries));
-                foreach (var path in files)
-                    _fileService.DeleteFile(path);
-                if (files.Count > 0)
-                    _logger.LogInformation("删除使用记录 {Id} 时清理了 {Count} 个附件文件", id, files.Count);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "删除使用记录 {Id} 的附件文件失败，已阻止数据库删除", id);
-                return (false, "删除失败：附件文件被占用或无法访问，请稍后重试。");
-            }
+            // 先落库再删文件：记录指向已删文件无法恢复，孤儿文件只是浪费磁盘
+            var files = GetAllFiles(record);
+            var departmentId = record.DepartmentId;
+            var vehicleId = record.VehicleId;
 
             db.VehicleUsageRecords.Remove(record);
             await db.SaveChangesAsync();
+
+            foreach (var path in files)
+            {
+                try { _fileService.DeleteFile(path); }
+                catch (Exception ex) { _logger.LogWarning(ex, "附件清理失败（孤儿文件）：{Path}", path); }
+            }
+
             _logger.LogInformation("使用记录 {Id} 已删除", id);
+            await _auditService.WriteAsync("UsageRecord.Delete", "VehicleUsageRecord", id,
+                $"车辆Id={vehicleId}，部门Id={departmentId}，附件数={files.Count}");
             return (true, null);
         }
 
@@ -173,6 +184,15 @@ namespace vehicleManagement.BLL.UsageRecord
         {
             var ext = Path.GetExtension(path)?.ToLowerInvariant();
             return ImageExtensions.Contains(ext);
+        }
+
+        /// <summary>
+        /// 判断文件路径是否为视频（两者都不是时页面走「在新标签页打开」兜底）
+        /// </summary>
+        public bool IsVideoFile(string path)
+        {
+            var ext = Path.GetExtension(path)?.ToLowerInvariant();
+            return VideoExtensions.Contains(ext);
         }
     }
 }

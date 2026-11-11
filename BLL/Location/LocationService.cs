@@ -18,11 +18,14 @@ namespace vehicleManagement.BLL.Location
     {
         private readonly LocationRepository _locationRepo;
         private readonly IDbContextFactory<VehicleDbContext> _dbFactory;
+        private readonly AuditService _auditService;
 
-        public LocationService(LocationRepository locationRepo, IDbContextFactory<VehicleDbContext> dbFactory)
+        public LocationService(LocationRepository locationRepo, IDbContextFactory<VehicleDbContext> dbFactory,
+            AuditService auditService)
         {
             _locationRepo = locationRepo;
             _dbFactory = dbFactory;
+            _auditService = auditService;
         }
 
         /// <summary>
@@ -44,25 +47,22 @@ namespace vehicleManagement.BLL.Location
             // 排序
             query = sortColumn switch
             {
-                "name" => sortAscending ? query.OrderBy(l => l.Name) : query.OrderByDescending(l => l.Name),
-                "desc" => sortAscending ? query.OrderBy(l => l.Description) : query.OrderByDescending(l => l.Description),
-                _ => sortAscending ? query.OrderBy(l => l.SortOrder).ThenBy(l => l.Id) : query.OrderByDescending(l => l.SortOrder).ThenByDescending(l => l.Id)
+                "name" => sortAscending
+                    ? query.OrderBy(l => l.Name).ThenBy(l => l.Id)
+                    : query.OrderByDescending(l => l.Name).ThenByDescending(l => l.Id),
+                "desc" => sortAscending
+                    ? query.OrderBy(l => l.Description).ThenBy(l => l.Id)
+                    : query.OrderByDescending(l => l.Description).ThenByDescending(l => l.Id),
+                _ => sortAscending
+                    ? query.OrderBy(l => l.SortOrder).ThenBy(l => l.Id)
+                    : query.OrderByDescending(l => l.SortOrder).ThenByDescending(l => l.Id)
             };
 
+            pageSize = PagedResult.ClampPageSize(pageSize);
             var totalCount = await query.CountAsync();
-            if (page > 1 && page > (int)Math.Ceiling((double)totalCount / pageSize))
-                page = (int)Math.Ceiling((double)totalCount / pageSize);
-            if (page < 1) page = 1;
-
+            page = PagedResult.ClampPage(page, totalCount, pageSize);
             var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
-
-            return new PagedResult<Models.Location>
-            {
-                Items = items,
-                TotalCount = totalCount,
-                CurrentPage = page,
-                PageSize = pageSize
-            };
+            return PagedResult.Of(items, totalCount, page, pageSize);
         }
 
         /// <summary>
@@ -112,6 +112,10 @@ namespace vehicleManagement.BLL.Location
         public async Task<(bool Success, string ErrorMessage)> DeleteAsync(int id)
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
+
+            var target = await db.Locations.AsNoTracking().FirstOrDefaultAsync(l => l.Id == id);
+            if (target == null) return (false, "删除失败：地点不存在。");
+
             // 校验1：是否被使用记录作为最终停车位置引用
             var hasFinalRecords = await ((IQueryable<Models.VehicleUsageRecord>)db.VehicleUsageRecords).AnyAsync(r => r.FinalLocationId == id);
             if (hasFinalRecords)
@@ -127,7 +131,11 @@ namespace vehicleManagement.BLL.Location
             }
 
             var result = await _locationRepo.DeleteAsync(id);
-            return result ? (true, null) : (false, "删除失败：地点不存在。");
+            if (!result) return (false, "删除失败：地点不存在。");
+
+            await _auditService.WriteAsync("Location.Delete", "Location", id,
+                $"分类={target.Category}，名称={target.Name}");
+            return (true, null);
         }
 
         /// <summary>
@@ -135,9 +143,8 @@ namespace vehicleManagement.BLL.Location
         /// </summary>
         public async Task<List<Models.Location>> GetActiveWaypointsAsync()
         {
-            return (await _locationRepo.GetByCategoryAsync(Models.LocationCategory.Location))
-                .Where(l => l.IsActive)
-                .ToList();
+            // 活跃过滤下沉到 SQL，不在内存里 .Where
+            return (await _locationRepo.GetByCategoryAsync(Models.LocationCategory.Location, activeOnly: true)).ToList();
         }
 
         /// <summary>
@@ -145,9 +152,7 @@ namespace vehicleManagement.BLL.Location
         /// </summary>
         public async Task<List<Models.Location>> GetActiveFinalLocationsAsync()
         {
-            return (await _locationRepo.GetByCategoryAsync(Models.LocationCategory.Purpose))
-                .Where(l => l.IsActive)
-                .ToList();
+            return (await _locationRepo.GetByCategoryAsync(Models.LocationCategory.Purpose, activeOnly: true)).ToList();
         }
     }
 }

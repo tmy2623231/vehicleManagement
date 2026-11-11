@@ -1,5 +1,7 @@
 @page "/personnel"
+@attribute [Authorize(Roles = vehicleManagement.DAL.Model.Roles.BackOffice)]
 @inject PersonnelService PersonService
+@inject AccountService AccountSvc
 @using PersonnelEntity = vehicleManagement.DAL.Model.Personnel
 
 <div class="flex justify-between items-center mb-5">
@@ -99,6 +101,72 @@
     </div>
 }
 
+<!-- 账号弹框：开通账号 / 重置密码 -->
+@if (showAccountForm)
+{
+    <div class="modal-overlay show" @onclick="CloseAccountForm">
+        <div class="modal" style="max-width:460px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">@(accountIsCreate ? "开通账号" : "重置密码")</div>
+                <button class="modal-close" @onclick="CloseAccountForm">✕</button>
+            </div>
+            <div>
+                <p class="text-sm text-gray mb-4">人员：<strong class="text-dark">@accountPersonnelName</strong></p>
+                @if (accountIsCreate)
+                {
+                    <div class="mb-4">
+                        <label class="input-label">登录用户名</label>
+                        <input class="input-field" type="text" placeholder="小写字母开头，字母或数字 3-20 位"
+                               @bind="accountUserName" @bind:event="oninput" />
+                    </div>
+                }
+                else
+                {
+                    <p class="text-sm text-gray mb-4">登录名：<strong class="text-dark">@accountUserName</strong></p>
+                }
+                <div>
+                    <label class="input-label">@(accountIsCreate ? "初始密码" : "新密码")</label>
+                    <input class="input-field" type="text" placeholder="至少 6 位"
+                           @bind="accountPassword" @bind:event="oninput" />
+                </div>
+                @if (!string.IsNullOrEmpty(accountError))
+                {
+                    <p class="text-sm mt-3" style="color:var(--red-600);">@accountError</p>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseAccountForm">取消</button>
+                <button class="btn btn-primary" @onclick="SaveAccount" disabled="@accountSaving">
+                    @(accountSaving ? "提交中..." : "确定")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 删除账号确认弹框：与「删除人员」分开，不塞进账号表单弹框 -->
+@if (showAccountDeleteConfirm)
+{
+    <div class="modal-overlay show" @onclick="CloseAccountDeleteConfirm">
+        <div class="modal" style="max-width:440px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <div class="modal-title">确认删除账号</div>
+                <button class="modal-close" @onclick="CloseAccountDeleteConfirm">✕</button>
+            </div>
+            <p style="color:var(--gray-700);font-size:15px;line-height:1.6;">
+                确定要删除 <strong class="text-dark">@deletingAccountName</strong>（登录名 <strong class="text-dark">@deletingAccountUserName</strong>）吗？<br/>
+                <span class="text-sm text-gray">删除后该人员将无法登录扫码页，可重新「开通账号」恢复；历史审计日志保留。</span>
+            </p>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseAccountDeleteConfirm">取消</button>
+                <button class="btn btn-danger" @onclick="ConfirmDeleteAccount" disabled="@accountSaving">
+                    @(accountSaving ? "删除中..." : "确认删除")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 <div class="card">
     <div class="card-header">
         <div>
@@ -118,6 +186,7 @@
                     联系方式 @SortIndicator("phone")
                 </th>
                 <th>状态</th>
+                <th>账号</th>
                 <th style="cursor:pointer" @onclick="@(() => ToggleSort("created"))">
                     创建时间 @SortIndicator("created")
                 </th>
@@ -141,9 +210,35 @@
                             <span class="badge badge-gray">离职</span>
                         }
                     </td>
+                    <td>
+                        @{
+                            var account = accounts.TryGetValue(p.Id, out var acc) ? acc : null;
+                        }
+                        @if (account == null)
+                        {
+                            <span class="text-sm text-gray">未开通</span>
+                        }
+                        else if (account.IsActive)
+                        {
+                            <span class="badge badge-green">@account.UserName</span>
+                        }
+                        else
+                        {
+                            <span class="badge badge-gray">@account.UserName（已禁用）</span>
+                        }
+                    </td>
                     <td>@p.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
                     <td>
                         <div class="flex gap-2">
+                            @if (accounts.TryGetValue(p.Id, out var rowAccount) && rowAccount != null)
+                            {
+                                <button class="btn btn-sm btn-secondary" @onclick="() => ShowResetPassword(p)">重置密码</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => ShowDeleteAccount(p, rowAccount)">删除账号</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-secondary" @onclick="() => ShowCreateAccount(p)">开通账号</button>
+                            }
                             <button class="btn btn-sm btn-info" @onclick="() => Edit(p)">编辑</button>
                             <button class="btn btn-sm btn-danger" @onclick="() => ShowDeleteConfirm(p.Id, p.Name)">删除</button>
                         </div>
@@ -172,6 +267,24 @@
     private int deletingPersonId = 0;
     private string deletingPersonName = "";
 
+    // ===== 账号管理（人员 → 账号） =====
+    private Dictionary<int, AppUser> accounts = new();
+    private bool showAccountForm = false;
+    private bool accountIsCreate = true;
+    private int accountPersonnelId = 0;
+    private int accountUserId = 0;
+    private string accountPersonnelName = "";
+    private string accountUserName = "";
+    private string accountPassword = "";
+    private string accountError = "";
+    private bool accountSaving = false;
+
+    // ===== 删除账号确认状态 =====
+    private bool showAccountDeleteConfirm = false;
+    private int deletingAccountUserId = 0;
+    private string deletingAccountUserName = "";
+    private string deletingAccountName = "";
+
     // ===== 分页/搜索/排序状态 =====
     private int currentPage = 1;
     private int pageSize = 10;
@@ -196,6 +309,94 @@
         personnelList = result.Items;
         totalCount = result.TotalCount;
         currentPage = result.CurrentPage;
+
+        // 账号列：一次性批量取，避免每行一次查询
+        accounts = await AccountSvc.GetAccountsByPersonnelAsync(personnelList.Select(p => p.Id));
+    }
+
+    // ===== 账号管理操作 =====
+    private void ShowCreateAccount(PersonnelEntity p)
+    {
+        accountIsCreate = true;
+        accountPersonnelId = p.Id;
+        accountUserId = 0;
+        accountPersonnelName = p.Name;
+        accountUserName = "";
+        accountPassword = "123456";   // 与存量播种的初始口令保持一致
+        accountError = "";
+        showAccountForm = true;
+    }
+
+    private void ShowResetPassword(PersonnelEntity p)
+    {
+        if (!accounts.TryGetValue(p.Id, out var account) || account == null) return;
+
+        accountIsCreate = false;
+        accountPersonnelId = p.Id;
+        accountUserId = account.Id;
+        accountPersonnelName = p.Name;
+        accountUserName = account.UserName;
+        accountPassword = "";
+        accountError = "";
+        showAccountForm = true;
+    }
+
+    private void CloseAccountForm()
+    {
+        showAccountForm = false;
+        accountError = "";
+    }
+
+    private void ShowDeleteAccount(PersonnelEntity p, AppUser account)
+    {
+        deletingAccountUserId = account.Id;
+        deletingAccountUserName = account.UserName;
+        deletingAccountName = p.Name;
+        showAccountDeleteConfirm = true;
+    }
+
+    private void CloseAccountDeleteConfirm()
+    {
+        showAccountDeleteConfirm = false;
+        deletingAccountUserId = 0;
+    }
+
+    private async Task ConfirmDeleteAccount()
+    {
+        accountSaving = true;
+        try
+        {
+            var (ok, err) = await AccountSvc.DeleteAccountAsync(deletingAccountUserId);
+            if (!ok) { errorMessage = err; }
+            CloseAccountDeleteConfirm();
+            if (ok) await LoadData();
+        }
+        finally { accountSaving = false; }
+    }
+
+    private async Task SaveAccount()
+    {
+        accountError = "";
+        accountSaving = true;
+        try
+        {
+            var (success, errorMsg) = accountIsCreate
+                ? await AccountSvc.CreateAccountAsync(accountPersonnelId, accountUserName, accountPassword)
+                : await AccountSvc.ResetPasswordAsync(accountUserId, accountPassword);
+
+            if (!success)
+            {
+                accountError = errorMsg;
+                return;
+            }
+
+            showAccountForm = false;
+            await LoadData();
+        }
+        finally
+        {
+            accountSaving = false;
+        }
     }
 
     private async Task OnPageChanged(int page)
@@ -220,6 +421,7 @@
             sortColumn = column;
             sortAscending = true;
         }
+        // 有意 fire-and-forget：ToggleSort 是同步 void，改 Task 只会把异常升级成断电路
         _ = LoadData();
     }
 
