@@ -2,16 +2,14 @@ using System;
 
 namespace vehicleManagement.DAL.Common
 {
-    /// <summary>
-    /// 北京时间（UTC+8）帮助类：
-    /// Docker 容器/服务器时区通常为 UTC，DateTime.Now 会取到 UTC 时间，
-    /// 统一通过 UTC+8 计算北京时间，保证数据库存取的时间与中国时间一致
-    /// </summary>
+    /// <summary>北京时间（UTC+8）：全项目唯一的「当前时间」来源，替代 DateTime.Now。</summary>
     public static class ChinaTime
     {
-        /// <summary>
-        /// 当前北京时间（无时区依赖，任何服务器环境下结果一致）
-        /// </summary>
-        public static DateTime Now => DateTime.UtcNow.AddHours(8);
+        /// <summary>UTC+8 固定偏移（中国不实行夏令时）。</summary>
+        public static readonly TimeSpan Offset = TimeSpan.FromHours(8);
+
+        /// <summary>当前北京时间：由 UTC 换算，与服务器/容器时区无关；Kind=Unspecified 以免被再次偏移。</summary>
+        public static DateTime Now =>
+            DateTime.SpecifyKind(DateTime.UtcNow.Add(Offset), DateTimeKind.Unspecified);
     }
 }
