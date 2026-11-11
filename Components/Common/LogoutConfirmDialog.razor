@@ -1,0 +1,43 @@
+@inject NavigationManager Nav
+
+@* 退出登录确认弹框：确定后由浏览器整页 POST /auth/logout。
+   不能改成电路内 NavigateTo —— Circuit 缓存了 AuthenticationState，顶栏会一直显示已登录。 *@
+
+@if (Visible)
+{
+    <div class="logout-backdrop" @onclick="CloseAsync"></div>
+    <div class="logout-dialog" role="dialog" aria-modal="true" aria-labelledby="logout-dialog-title">
+        <h3 class="logout-dialog-title" id="logout-dialog-title">确认退出登录？</h3>
+        <p class="logout-dialog-text">退出后需要重新登录才能继续使用。</p>
+        <div class="logout-dialog-actions">
+            <button type="button" class="logout-btn logout-btn-cancel" @onclick="CloseAsync">取消</button>
+            <form method="post" action="@PostAction" class="logout-form" data-enhance-nav="false">
+                <button type="submit" class="logout-btn logout-btn-ok">确定</button>
+            </form>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>是否显示弹框，由布局持有状态。</summary>
+    [Parameter]
+    public bool Visible { get; set; }
+
+    /// <summary>取消/点遮罩时回传给布局。</summary>
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    /// <summary>扫码/登记页退出后回移动端登录，后台页回后台登录。</summary>
+    private string PostAction
+    {
+        get
+        {
+            var relative = Nav.ToBaseRelativePath(Nav.Uri);
+            var isScanFlow = relative.StartsWith("scan", StringComparison.OrdinalIgnoreCase)
+                             || relative.StartsWith("execute/", StringComparison.OrdinalIgnoreCase);
+            return isScanFlow ? "/auth/logout?back=mobile" : "/auth/logout";
+        }
+    }
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+}

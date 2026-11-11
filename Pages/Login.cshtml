@@ -1,0 +1,174 @@
+@page "/login"
+@model vehicleManagement.Pages.LoginModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>登录 · 车辆管理系统</title>
+    <link rel="icon" href="favicon.ico" />
+    <style>
+        :root {
+            --login-primary: #009D5E;
+            --login-primary-dark: #007a49;
+            --login-bg: #f5f6f8;
+            --login-card: #ffffff;
+            --login-text: #373737;
+            --login-muted: #8E8E8E;
+            --login-border: #e2e4e8;
+            --login-danger: #C63435;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: var(--login-bg);
+            color: var(--login-text);
+            font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 380px;
+            background: var(--login-card);
+            border: 1px solid var(--login-border);
+            border-radius: 12px;
+            padding: 32px 28px;
+        }
+
+        .login-title {
+            margin: 0 0 4px;
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: .5px;
+        }
+
+        .login-subtitle {
+            margin: 0 0 24px;
+            font-size: 13px;
+            color: var(--login-muted);
+        }
+
+        .login-field { margin-bottom: 16px; }
+
+        .login-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: var(--login-muted);
+        }
+
+        .login-input {
+            width: 100%;
+            height: 44px;
+            padding: 0 12px;
+            font-size: 15px;
+            color: var(--login-text);
+            background: #fff;
+            border: 1px solid var(--login-border);
+            border-radius: 8px;
+        }
+
+        .login-input:focus {
+            outline: none;
+            border-color: var(--login-primary);
+        }
+
+        .login-remember {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 4px 0 20px;
+            font-size: 14px;
+            color: var(--login-text);
+            user-select: none;
+        }
+
+        .login-remember input { width: 16px; height: 16px; accent-color: var(--login-primary); }
+
+        .login-button {
+            width: 100%;
+            height: 44px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+            background: var(--login-primary);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .login-button:hover { background: var(--login-primary-dark); }
+
+        .login-error {
+            margin: 0 0 16px;
+            padding: 10px 12px;
+            font-size: 13px;
+            color: var(--login-danger);
+            background: #fdf1f1;
+            border: 1px solid #f3d4d4;
+            border-radius: 8px;
+        }
+
+        .login-hint {
+            margin: 20px 0 0;
+            padding-top: 16px;
+            border-top: 1px solid var(--login-border);
+            font-size: 12px;
+            line-height: 1.7;
+            color: var(--login-muted);
+        }
+    </style>
+</head>
+<body>
+    <main class="login-card">
+        <h1 class="login-title">车辆管理系统</h1>
+        <p class="login-subtitle">请使用您的账号登录</p>
+
+        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+        {
+            <p class="login-error">@Model.ErrorMessage</p>
+        }
+
+        <form method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl" />
+
+            <div class="login-field">
+                <label class="login-label" for="UserName">用户名</label>
+                <input class="login-input" id="UserName" name="UserName" value="@Model.UserName"
+                       autocomplete="username" autocapitalize="none" spellcheck="false" autofocus />
+            </div>
+
+            <div class="login-field">
+                <label class="login-label" for="Password">密码</label>
+                <input class="login-input" id="Password" name="Password" type="password"
+                       autocomplete="current-password" />
+            </div>
+
+            <label class="login-remember">
+                <input type="checkbox" name="Remember" value="true" @(Model.Remember ? "checked" : "") />
+                <span>记住我（30 天内免登录）</span>
+            </label>
+
+            <button class="login-button" type="submit">登 录</button>
+        </form>
+
+        <p class="login-hint">
+            使用人员请扫描车辆上的二维码登录登记；<br />
+            部门管理员只能查看与维护本部门数据。
+        </p>
+    </main>
+</body>
+</html>

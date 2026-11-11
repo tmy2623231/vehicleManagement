@@ -1,0 +1,36 @@
+@inject NavigationManager Nav
+
+@* 未登录：整页跳到登录页并带 returnUrl（登录后回原页面）。
+   必须在首次渲染完成后跳 —— 预渲染阶段 NavigateTo 会抛 NavigationException。 *@
+
+<div class="redirecting-tip">
+    正在跳转到登录页…<noscript><br /><a href="@LoginUrl">点此继续</a></noscript>
+</div>
+
+@code {
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        Nav.NavigateTo(LoginUrl, forceLoad: true);
+    }
+
+    /// <summary>登录页地址：扫码/登记链路走移动端登录，其余走后台登录。</summary>
+    private string LoginUrl
+    {
+        get
+        {
+            // 根相对路径：从 /m/login 解析 "execute/x" 会变成 /m/execute/x
+            var relative = Nav.ToBaseRelativePath(Nav.Uri);
+            var query = string.IsNullOrWhiteSpace(relative)
+                ? ""
+                : $"?returnUrl={Uri.EscapeDataString("/" + relative)}";
+
+            return (IsScanFlow(relative) ? "/m/login" : "/login") + query;
+        }
+    }
+
+    private static bool IsScanFlow(string relative)
+        => relative.StartsWith("scan", StringComparison.OrdinalIgnoreCase)
+           || relative.StartsWith("execute/", StringComparison.OrdinalIgnoreCase);
+}

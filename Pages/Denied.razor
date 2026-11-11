@@ -1,0 +1,23 @@
+@page "/denied"
+@layout vehicleManagement.Components.Layouts.MainLayout
+@attribute [AllowAnonymous]
+
+<PageTitle>无权访问 · 车辆管理系统</PageTitle>
+
+<div style="display:flex;align-items:center;justify-content:center;min-height:60vh;padding:24px;">
+    <div style="max-width:420px;text-align:center;">
+        <div style="font-size:44px;font-weight:700;color:var(--primary-600,#009D5E);line-height:1;">403</div>
+        <h2 style="margin:16px 0 8px;font-size:18px;font-weight:600;color:var(--text-primary,#373737);">无权访问该页面</h2>
+        <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:var(--text-secondary,#8E8E8E);">
+            当前账号没有此页面的访问权限。如需开通，请联系系统管理员。
+        </p>
+        <AuthorizeView Roles="@vehicleManagement.DAL.Model.Roles.Admin">
+            <Authorized>
+                <a href="/" class="btn btn-primary">返回首页</a>
+            </Authorized>
+            <NotAuthorized>
+                <a href="/vehicles" class="btn btn-primary">返回我的首页</a>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+</div>

@@ -1,0 +1,191 @@
+@page "/m/login"
+@model vehicleManagement.Pages.MobileLoginModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = null;
+}
+
+@* 扫码/登记链路的独立登录入口：只服务使用人员，登录后回到扫码或登记页，不落地到后台。 *@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#009D5E" />
+    <title>扫码登记登录</title>
+    <link rel="icon" href="favicon.ico" />
+    <style>
+        :root {
+            --m-primary: #009D5E;
+            --m-primary-dark: #007a49;
+            --m-bg: #f5f6f8;
+            --m-text: #373737;
+            --m-muted: #8E8E8E;
+            --m-border: #e2e4e8;
+            --m-danger: #C63435;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 20px 16px calc(24px + env(safe-area-inset-bottom));
+            background: var(--m-bg);
+            color: var(--m-text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+        }
+
+        .m-head {
+            padding: 24px 4px 20px;
+        }
+
+        .m-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            height: 32px;
+            padding: 0 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--m-primary);
+            background: #e8f6ef;
+            border-radius: 16px;
+        }
+
+        .m-title {
+            margin: 14px 0 6px;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: .5px;
+        }
+
+        .m-subtitle {
+            margin: 0;
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--m-muted);
+        }
+
+        .m-card {
+            background: #fff;
+            border: 1px solid var(--m-border);
+            border-radius: 14px;
+            padding: 20px 16px;
+        }
+
+        .m-field { margin-bottom: 16px; }
+
+        .m-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: var(--m-muted);
+        }
+
+        .m-input {
+            width: 100%;
+            height: 50px;
+            padding: 0 14px;
+            font-size: 16px;
+            color: var(--m-text);
+            background: #fff;
+            border: 1px solid var(--m-border);
+            border-radius: 10px;
+        }
+
+        .m-input:focus {
+            outline: none;
+            border-color: var(--m-primary);
+        }
+
+        .m-remember {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 0 20px;
+            font-size: 14px;
+        }
+
+        .m-remember input {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--m-primary);
+        }
+
+        .m-button {
+            width: 100%;
+            height: 50px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            background: var(--m-primary);
+            border: none;
+            border-radius: 10px;
+        }
+
+        .m-button:active { background: var(--m-primary-dark); }
+
+        .m-error {
+            margin: 0 0 16px;
+            padding: 10px 12px;
+            font-size: 13px;
+            color: var(--m-danger);
+            background: #fdf1f1;
+            border: 1px solid #f3d4d4;
+            border-radius: 10px;
+        }
+
+        .m-hint {
+            margin: 18px 4px 0;
+            font-size: 12px;
+            line-height: 1.8;
+            color: var(--m-muted);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <header class="m-head">
+        <span class="m-badge">车辆登记</span>
+        <h1 class="m-title">扫码登记登录</h1>
+        <p class="m-subtitle">登录后回到本次扫码的车辆登记页</p>
+    </header>
+
+    <main class="m-card">
+        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+        {
+            <p class="m-error">@Model.ErrorMessage</p>
+        }
+
+        <form method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl" />
+
+            <div class="m-field">
+                <label class="m-label" for="UserName">用户名</label>
+                <input class="m-input" id="UserName" name="UserName" value="@Model.UserName"
+                       autocomplete="username" autocapitalize="none" spellcheck="false" autofocus />
+            </div>
+
+            <div class="m-field">
+                <label class="m-label" for="Password">密码</label>
+                <input class="m-input" id="Password" name="Password" type="password"
+                       autocomplete="current-password" />
+            </div>
+
+            <label class="m-remember">
+                <input type="checkbox" name="Remember" value="true" @(Model.Remember ? "checked" : "") />
+                <span>记住我（30 天内免登录）</span>
+            </label>
+
+            <button class="m-button" type="submit">登 录</button>
+        </form>
+    </main>
+
+    <p class="m-hint">本入口仅供使用人员扫码登记使用<br />后台管理请使用电脑端登录页</p>
+</body>
+</html>

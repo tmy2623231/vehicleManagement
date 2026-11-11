@@ -1,0 +1,43 @@
+@* 已登录但无权访问：原地渲染 403，不重定向到登录页（D4 定案）。
+   重定向回登录页会让已登录的用户以为自己掉了登录态。 *@
+@using vehicleManagement.DAL.Model
+
+<style>
+    .denied-home-link {
+        display: inline-block;
+        padding: 0 20px;
+        height: 38px;
+        line-height: 36px;
+        font-size: 14px;
+        color: #fff;
+        background: var(--primary-600, #009D5E);
+        border-radius: 8px;
+        text-decoration: none;
+    }
+</style>
+
+<div style="display:flex;align-items:center;justify-content:center;min-height:60vh;padding:24px;">
+    <div style="max-width:420px;text-align:center;">
+        <div style="font-size:44px;font-weight:700;color:var(--primary-600,#009D5E);line-height:1;">403</div>
+        <h2 style="margin:16px 0 8px;font-size:18px;font-weight:600;color:var(--text-primary,#373737);">无权访问该页面</h2>
+        <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:var(--text-secondary,#8E8E8E);">
+            当前账号没有此页面的访问权限。如需开通，请联系系统管理员。
+        </p>
+        @* 平铺而非嵌套：AuthorizeView 嵌套子内容会撞 context 参数名 *@
+        <AuthorizeView Roles="@Roles.Admin">
+            <Authorized>
+                <a href="/" class="denied-home-link">返回首页</a>
+            </Authorized>
+        </AuthorizeView>
+        <AuthorizeView Roles="@Roles.DeptAdmin">
+            <Authorized>
+                <a href="/vehicles" class="denied-home-link">返回我的首页</a>
+            </Authorized>
+        </AuthorizeView>
+        <AuthorizeView Roles="@Roles.User">
+            <Authorized>
+                <a href="/scan" class="denied-home-link">返回扫码页</a>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+</div>

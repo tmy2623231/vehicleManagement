@@ -1,7 +1,19 @@
 ﻿
 <Router AppAssembly="@typeof(Program).Assembly">
     <Found Context="routeData">
-        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+            <NotAuthorized>
+                @* 二分（D4）：已登录 = 原地 403；未登录 = 整页跳登录页并带 returnUrl *@
+                <AuthorizeView>
+                    <Authorized Context="authorizedContext">
+                        <NotAuthorizedView />
+                    </Authorized>
+                    <NotAuthorized Context="notAuthorizedContext">
+                        <RedirectToLogin />
+                    </NotAuthorized>
+                </AuthorizeView>
+            </NotAuthorized>
+        </AuthorizeRouteView>
     </Found>
     <NotFound>
         <LayoutView Layout="@typeof(MainLayout)">
