@@ -3,11 +3,11 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-11-11T03:52:34Z"
+exported_at: "2026-11-11T11:47:22Z"
 modules:
     "":
-        dir_name: 车辆管理系统 Blazor Server 应用入口
-        title: 车辆管理系统 Blazor Server 应用入口
+        dir_name: 车辆管理系统（Blazor Server 单进程应用）
+        title: 车辆管理系统（Blazor Server 单进程应用）
         scope:
             - README.md
             - .gitignore
@@ -32,8 +32,8 @@ modules:
         depends_on: []
         related_to: []
     ai_chat_subsystem:
-        dir_name: AI 车辆管理对话子系统
-        title: AI 车辆管理对话子系统
+        dir_name: AI 聊天子系统（Blazor + Semantic Kernel + EF Core）
+        title: AI 聊天子系统（Blazor + Semantic Kernel + EF Core）
         scope:
             - aiServer/
         source_files: []
@@ -43,8 +43,8 @@ modules:
             - path: static_assets
             - path: vehicle_management_app
     static_assets:
-        dir_name: Blazor 应用静态资源与前端脚本
-        title: Blazor 应用静态资源与前端脚本
+        dir_name: Blazor 应用静态资源（CSS_JS_字体_上传目录）
+        title: Blazor 应用静态资源（CSS/JS/字体/上传目录）
         scope:
             - wwwroot/
         source_files: []
@@ -52,10 +52,9 @@ modules:
         depends_on: []
         related_to:
             - path: ai_chat_subsystem
-            - path: vehicle_management_app
     vehicle_management_app:
-        dir_name: 车辆管理系统业务层与 Blazor 前端
-        title: 车辆管理系统业务层与 Blazor 前端
+        dir_name: 车辆管理系统业务层、数据访问层与 Blazor Server 界面
+        title: 车辆管理系统业务层、数据访问层与 Blazor Server 界面
         scope:
             - BLL/
             - DAL/
@@ -66,4 +65,3 @@ modules:
         depends_on: []
         related_to:
             - path: ai_chat_subsystem
-            - path: static_assets

@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: ai_chat_subsystem
-title: AI 车辆管理对话子系统
+title: AI 聊天子系统（Blazor + Semantic Kernel + EF Core）
 scope:
     - aiServer/
 source_files: []

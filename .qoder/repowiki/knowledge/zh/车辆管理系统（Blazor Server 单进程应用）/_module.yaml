@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: ""
-title: 车辆管理系统 Blazor Server 应用入口
+title: 车辆管理系统（Blazor Server 单进程应用）
 scope:
     - README.md
     - .gitignore
